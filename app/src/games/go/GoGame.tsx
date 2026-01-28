@@ -1,0 +1,331 @@
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, RotateCcw, SkipForward, Users, Cpu } from 'lucide-react';
+import { type Stone, type Board, BOARD_SIZE, tryMakeMove } from './GoLogic';
+import { getBestMove, type Difficulty } from './GoAI';
+
+interface GameState {
+    board: Board;
+    turn: Stone;
+    capturedBlack: number;
+    capturedWhite: number;
+    passes: number;
+}
+
+const GoGame: React.FC = () => {
+  const [board, setBoard] = useState<Board>(
+    Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null))
+  );
+  const [turn, setTurn] = useState<Stone>('b');
+  const [capturedBlack, setCapturedBlack] = useState(0);
+  const [capturedWhite, setCapturedWhite] = useState(0);
+  const [history, setHistory] = useState<GameState[]>([]);
+  const [gameOver, setGameOver] = useState(false);
+  const [lastMove, setLastMove] = useState<{r: number, c: number} | null>(null);
+
+  // New State for Game Mode
+  const [gameMode, setGameMode] = useState<'pvp' | 'pvc'>('pvc');
+  const [aiDifficulty, setAiDifficulty] = useState<Difficulty>('medium');
+  const [showSetup, setShowSetup] = useState(true);
+  const [isAiThinking, setIsAiThinking] = useState(false);
+
+  // AI Turn Effect
+  useEffect(() => {
+    // AI plays White (Second)
+    if (gameMode === 'pvc' && turn === 'w' && !gameOver && !showSetup) {
+        setIsAiThinking(true);
+        const timer = setTimeout(() => {
+            // Pass previous board for Ko check
+            const prevBoard = history.length > 0 ? history[history.length - 1].board : undefined;
+            const bestMove = getBestMove(board, 'w', aiDifficulty, prevBoard);
+            
+            if (bestMove) {
+                const result = tryMakeMove(board, bestMove.r, bestMove.c, 'w', prevBoard);
+                if (result.success && result.newBoard) {
+                    executeMove(result.newBoard, result.captured, bestMove);
+                } else {
+                    // AI failed to find valid move? Pass.
+                    passTurn();
+                }
+            } else {
+                // Pass
+                passTurn();
+            }
+            setIsAiThinking(false);
+        }, 500);
+        return () => clearTimeout(timer);
+    }
+  }, [board, turn, gameMode, aiDifficulty, showSetup, gameOver]);
+
+  const executeMove = (newBoard: Board, captured: number, moveLoc: {r: number, c: number}) => {
+    // Save history
+    setHistory(prev => [...prev, {
+        board: board.map(row => [...row]),
+        turn,
+        capturedBlack,
+        capturedWhite,
+        passes: 0
+    }]);
+
+    // Update State
+    setBoard(newBoard);
+    setLastMove(moveLoc);
+    
+    if (turn === 'b') {
+        setCapturedWhite(prev => prev + captured);
+        setTurn('w');
+    } else {
+        setCapturedBlack(prev => prev + captured);
+        setTurn('b');
+    }
+  };
+
+  const handleIntersectionClick = (r: number, c: number) => {
+    if (board[r][c] || gameOver || showSetup || (gameMode === 'pvc' && turn === 'w')) return;
+
+    const prevBoard = history.length > 0 ? history[history.length - 1].board : undefined;
+    const result = tryMakeMove(board, r, c, turn, prevBoard);
+
+    if (!result.success) {
+        if (result.error === 'Ko') alert("Lỗi Ko: Không được lặp lại trạng thái bàn cờ cũ ngay lập tức!");
+        return;
+    }
+
+    if (result.newBoard) {
+        executeMove(result.newBoard, result.captured, {r, c});
+    }
+  };
+
+  const passTurn = () => {
+      if (gameOver) return;
+
+      // Save history
+      setHistory(prev => [...prev, {
+        board: board.map(row => [...row]),
+        turn,
+        capturedBlack,
+        capturedWhite,
+        passes: 0 // Ideally increment pass count
+      }]);
+
+      setTurn(turn === 'b' ? 'w' : 'b');
+      setLastMove(null);
+
+      // Simple game over check logic: 2 passes = game over
+      // Here we assume if AI passes, it might be game over if player also passed.
+      // But for simplicity, we just toggle turn.
+  };
+
+  const startNewGame = (mode: 'pvp' | 'pvc', difficulty?: Difficulty) => {
+    setBoard(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
+    setTurn('b');
+    setCapturedBlack(0);
+    setCapturedWhite(0);
+    setHistory([]);
+    setGameOver(false);
+    setLastMove(null);
+    setGameMode(mode);
+    if (difficulty) setAiDifficulty(difficulty);
+    setShowSetup(false);
+  };
+
+  const resetGame = () => {
+    setShowSetup(true);
+  };
+
+  const undoMove = () => {
+    if (history.length === 0 || gameOver) return;
+    
+    if (gameMode === 'pvc') {
+        if (isAiThinking) return;
+        if (history.length < 2) return;
+
+        // Undo 2 states
+        // Current State -> History[last] -> History[last-1]
+        // Actually history stores state BEFORE move.
+        // So to undo 2 moves (AI + Player), we need to go back 2 steps in history array.
+        // history[len-1] is state before AI move.
+        // history[len-2] is state before Player move.
+        
+        const targetState = history[history.length - 2];
+        setBoard(targetState.board);
+        setTurn(targetState.turn);
+        setCapturedBlack(targetState.capturedBlack);
+        setCapturedWhite(targetState.capturedWhite);
+        setHistory(prev => prev.slice(0, -2));
+        setLastMove(null); // Lose last move info
+
+    } else {
+        const lastState = history[history.length - 1];
+        setBoard(lastState.board);
+        setTurn(lastState.turn);
+        setCapturedBlack(lastState.capturedBlack);
+        setCapturedWhite(lastState.capturedWhite);
+        setHistory(prev => prev.slice(0, -1));
+        setLastMove(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-8 w-full max-w-4xl mx-auto relative min-h-[600px]">
+      
+      {/* Setup Modal */}
+      {showSetup && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-xl animate-fade-in">
+          <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-md w-full text-center">
+            <h2 className="text-3xl font-bold text-white mb-8">Cài đặt ván đấu</h2>
+            
+            <div className="space-y-4">
+              <button 
+                onClick={() => startNewGame('pvp')}
+                className="w-full p-4 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-indigo-500 group"
+              >
+                <div className="p-3 bg-indigo-500/20 rounded-lg text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                  <Users size={24} />
+                </div>
+                <div className="text-left">
+                  <div className="font-bold text-white text-lg">Người vs Người</div>
+                  <div className="text-slate-400 text-sm">Chơi cùng bạn bè trên cùng thiết bị</div>
+                </div>
+              </button>
+
+              <div className="space-y-2">
+                 <div className="text-left text-slate-400 text-sm font-semibold uppercase tracking-wider ml-1">Chơi với Máy</div>
+                 {['easy', 'medium', 'hard'].map((level) => (
+                   <button 
+                    key={level}
+                    onClick={() => startNewGame('pvc', level as Difficulty)}
+                    className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-emerald-500 group"
+                  >
+                    <div className={`p-2 rounded-lg transition-colors ${
+                      level === 'easy' ? 'bg-green-500/20 text-green-400 group-hover:bg-green-500 group-hover:text-white' :
+                      level === 'medium' ? 'bg-yellow-500/20 text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white' :
+                      'bg-red-500/20 text-red-400 group-hover:bg-red-500 group-hover:text-white'
+                    }`}>
+                      <Cpu size={20} />
+                    </div>
+                    <div className="text-left flex-grow">
+                      <div className="font-bold text-white capitalize">
+                        {level === 'easy' ? 'Dễ' : level === 'medium' ? 'Trung bình' : 'Khó'}
+                      </div>
+                    </div>
+                  </button>
+                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Header */}
+      <div className="flex justify-between items-center w-full bg-slate-800/50 p-4 rounded-xl backdrop-blur-sm border border-slate-700/50">
+        <div className={`flex flex-col items-center px-6 py-3 rounded-lg transition-all duration-300 ${turn === 'b' ? 'bg-slate-900/80 text-white border border-slate-600 shadow-[0_0_15px_rgba(255,255,255,0.1)]' : 'text-slate-500'}`}>
+          <div className="flex items-center gap-2 font-bold mb-1">
+            <div className={`w-4 h-4 rounded-full bg-black border border-slate-600 ${turn === 'b' ? 'ring-2 ring-white animate-pulse' : ''}`} />
+            {gameMode === 'pvc' ? 'BẠN (ĐEN)' : 'QUÂN ĐEN'}
+          </div>
+          <span className="text-sm opacity-80">Tù binh: {capturedWhite}</span>
+        </div>
+        
+        <div className="text-2xl font-black text-slate-700 font-mono">VS</div>
+        
+        <div className={`flex flex-col items-center px-6 py-3 rounded-lg transition-all duration-300 ${turn === 'w' ? 'bg-slate-100/10 text-white border border-white/20 shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'text-slate-500'}`}>
+          <div className="flex items-center gap-2 font-bold mb-1">
+            {gameMode === 'pvc' && isAiThinking ? (
+                 <span className="animate-pulse">Đang nghĩ...</span>
+            ) : (
+                 <span>{gameMode === 'pvc' ? `MÁY (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})` : 'QUÂN TRẮNG'}</span>
+            )}
+            <div className={`w-4 h-4 rounded-full bg-white ${turn === 'w' ? 'ring-2 ring-white animate-pulse' : ''}`} />
+          </div>
+          <span className="text-sm opacity-80">Tù binh: {capturedBlack}</span>
+        </div>
+      </div>
+
+      {/* Main Game Area */}
+      <div className="relative p-1 sm:p-2 rounded-xl bg-slate-900 shadow-2xl border border-slate-800">
+        <div className="relative bg-[#1e293b] p-4 sm:p-8 rounded border border-slate-700 shadow-inner">
+            <div className="grid relative z-10" style={{ 
+                gridTemplateColumns: `repeat(${BOARD_SIZE}, minmax(0, 1fr))`,
+                width: 'fit-content',
+                gap: 0
+            }}>
+            {board.map((row, r) => (
+                row.map((stone, c) => (
+                <div 
+                    key={`${r}-${c}`}
+                    className="w-7 h-7 sm:w-10 sm:h-10 relative flex items-center justify-center cursor-pointer"
+                    onClick={() => handleIntersectionClick(r, c)}
+                >
+                    {/* Grid Lines */}
+                    <div className="absolute inset-0 z-0 pointer-events-none">
+                        <div className={`absolute top-1/2 w-full h-0.5 bg-slate-600 ${c===0 ? 'left-1/2' : ''} ${c===BOARD_SIZE-1 ? 'right-1/2 w-1/2' : ''}`} />
+                        <div className={`absolute left-1/2 h-full w-0.5 bg-slate-600 ${r===0 ? 'top-1/2' : ''} ${r===BOARD_SIZE-1 ? 'bottom-1/2 h-1/2' : ''}`} />
+                        
+                        {/* Star points (Hoshi) - Adjusted for 13x13 (3, 9, 6 center) */}
+                        {((r === 3 || r === 9 || r === 6) && (c === 3 || c === 9 || c === 6)) && (
+                            <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-slate-400 rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_5px_rgba(255,255,255,0.5)]"></div>
+                        )}
+                    </div>
+
+                    {/* Last Move Highlight */}
+                    {lastMove?.r === r && lastMove?.c === c && (
+                        <div className="absolute w-full h-full rounded-full border-2 border-red-500 animate-ping opacity-75 z-20"></div>
+                    )}
+
+                    {/* Hover effect for valid move */}
+                    {!stone && !gameOver && !(gameMode === 'pvc' && turn === 'w') && (
+                        <div className={`absolute w-5 h-5 rounded-full opacity-0 hover:opacity-40 transform transition-all duration-200 hover:scale-110
+                            ${turn === 'b' ? 'bg-black shadow-[0_0_10px_black]' : 'bg-white shadow-[0_0_10px_white]'}
+                        `} />
+                    )}
+
+                    {/* Stone */}
+                    {stone && (
+                        <div className={`
+                            relative z-10 w-[90%] h-[90%] rounded-full shadow-lg transform transition-all duration-300
+                            ${stone === 'b' 
+                                ? 'bg-black border border-slate-700 shadow-[inset_-2px_-2px_6px_rgba(255,255,255,0.1)]' 
+                                : 'bg-white border border-slate-300 shadow-[inset_-2px_-2px_6px_rgba(0,0,0,0.2),0_0_10px_rgba(255,255,255,0.3)]'}
+                        `}>
+                            {/* Reflection */}
+                            <div className="absolute top-[15%] left-[15%] w-[25%] h-[25%] rounded-full bg-white/20 blur-[1px]"></div>
+                        </div>
+                    )}
+                </div>
+                ))
+            ))}
+            </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex gap-4">
+          <button
+            onClick={undoMove}
+            disabled={history.length === 0 || gameOver || (gameMode === 'pvc' && isAiThinking)}
+            className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+          >
+            <RotateCcw size={20} />
+            Đi lại
+          </button>
+          <button
+            onClick={passTurn}
+            disabled={gameOver || (gameMode === 'pvc' && isAiThinking)}
+            className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:shadow-orange-500/30"
+          >
+            <SkipForward size={20} />
+            Bỏ lượt
+          </button>
+          <button
+            onClick={resetGame}
+            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:shadow-indigo-500/30"
+          >
+            <RefreshCw size={20} />
+            Ván mới
+          </button>
+      </div>
+    </div>
+  );
+};
+
+export default GoGame;
