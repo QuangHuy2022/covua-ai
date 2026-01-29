@@ -81,10 +81,10 @@ const LandingPage: React.FC = () => {
         </div>
 
         <div className="mt-20 text-center">
-             <button className="px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg hover:bg-indigo-50 transition-colors shadow-lg shadow-white/10 flex items-center mx-auto gap-3">
+             <Link to="/tutorial" className="inline-flex px-8 py-4 bg-white text-slate-900 rounded-full font-bold text-lg hover:bg-indigo-50 transition-colors shadow-lg shadow-white/10 items-center mx-auto gap-3">
                 <Play className="fill-slate-900" size={20} />
                 Hướng dẫn người mới
-             </button>
+             </Link>
         </div>
       </div>
     </div>

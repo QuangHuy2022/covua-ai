@@ -137,7 +137,7 @@ const ChessGame: React.FC = () => {
         setShowSetup(false);
       }
     });
-  }, [connector, game]);
+  }, [connector, game, myColor]);
 
   // AI Turn Effect
   useEffect(() => {
