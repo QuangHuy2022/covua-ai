@@ -351,7 +351,7 @@ const ChessGame: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-4xl mx-auto relative min-h-[600px]">
+    <div className="flex flex-col items-center gap-8 w-full max-w-6xl mx-auto relative min-h-[600px]">
       {/* Setup Modal */}
       {showSetup && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-xl animate-fade-in">
@@ -511,7 +511,7 @@ const ChessGame: React.FC = () => {
                     <div
                     key={`${rowIndex}-${colIndex}`}
                     className={`
-                        w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center cursor-pointer relative
+                        w-12 h-12 sm:w-20 sm:h-20 flex items-center justify-center cursor-pointer relative
                         ${isDark ? 'bg-[#779556]' : 'bg-[#ebecd0]'}
                         ${isSelected ? '!bg-[#baca44]' : ''}
                         ${(isLastFrom || isLastTo) ? '!bg-[#f5f682]' : ''}
@@ -569,20 +569,20 @@ const ChessGame: React.FC = () => {
           </div>
 
           {/* Sidebar / History */}
-          <div className="w-full max-w-3xl flex flex-col gap-4">
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-64 flex flex-col shadow-lg">
-                  <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
+          <div className="w-full max-w-[680px] flex flex-col gap-4">
+              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-48 flex flex-col shadow-lg">
+                  <h3 className="text-slate-200 font-bold mb-2 flex items-center gap-2 border-b border-slate-700 pb-2">
                       <RotateCcw size={18} /> Lịch sử nước đi
                   </h3>
-                  <div className="overflow-y-auto flex-grow space-y-1 pr-2 custom-scrollbar">
+                  <div className="overflow-y-auto flex-grow space-y-1 pr-2 custom-scrollbar grid grid-cols-2 gap-x-4 content-start">
                       {history.length === 0 && (
-                          <div className="text-slate-500 text-center italic py-4">Chưa có nước đi nào</div>
+                          <div className="text-slate-500 text-center italic py-4 col-span-2">Chưa có nước đi nào</div>
                       )}
                       {Array.from({ length: Math.ceil(history.length / 2) }).map((_, i) => (
-                          <div key={i} className="flex text-sm">
-                              <div className="w-8 text-slate-500 py-1">{i + 1}.</div>
-                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2 mr-2">{history[2 * i]}</div>
-                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2">{history[2 * i + 1]}</div>
+                          <div key={i} className="flex text-sm border-b border-slate-700/30 pb-1">
+                              <div className="w-8 text-slate-500 font-mono">{i + 1}.</div>
+                              <div className="flex-1 font-mono text-slate-300 font-bold">{history[2 * i]}</div>
+                              <div className="flex-1 font-mono text-slate-300 font-bold">{history[2 * i + 1]}</div>
                           </div>
                       ))}
                   </div>
