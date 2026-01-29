@@ -181,18 +181,19 @@ const GoGame: React.FC = () => {
       if (gameOver) return;
 
       // Save history
+      const currentTurn = turnRef.current;
       setHistory(prev => [...prev, {
-        board: board.map(row => [...row]),
-        turn,
-        capturedBlack,
-        capturedWhite,
+        board: boardRef.current.map(row => [...row]),
+        turn: currentTurn,
+        capturedBlack: capturedBlackRef.current,
+        capturedWhite: capturedWhiteRef.current,
         passes: 0 // Ideally increment pass count
       }]);
 
-      setTurn(turn === 'b' ? 'w' : 'b');
+      setTurn(prev => prev === 'b' ? 'w' : 'b');
       setLastMove(null);
 
-      if (sendToPeer && gameMode === 'online') {
+      if (sendToPeer && gameModeRef.current === 'online') {
           connector.send({ type: 'pass' });
       }
 

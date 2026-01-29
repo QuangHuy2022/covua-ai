@@ -108,7 +108,7 @@ const ChessGame: React.FC = () => {
 
   const updateGameState = () => {
     setBoard(game.board());
-    setHistory(game.history());
+    setHistory([...game.history()]);
     if (game.isGameOver()) {
         if (game.isCheckmate()) {
             setWinner(game.turn() === 'w' ? 'b' : 'w');
@@ -569,8 +569,8 @@ const ChessGame: React.FC = () => {
           </div>
 
           {/* Sidebar / History */}
-          <div className="w-full lg:w-80 flex flex-col gap-4 h-[550px]">
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex-grow overflow-hidden flex flex-col shadow-lg">
+          <div className="w-full max-w-3xl flex flex-col gap-4">
+              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-64 flex flex-col shadow-lg">
                   <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
                       <RotateCcw size={18} /> Lịch sử nước đi
                   </h3>
