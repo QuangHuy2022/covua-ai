@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Chess, type Square } from 'chess.js';
 import { RefreshCw, RotateCcw, Cpu, Users } from 'lucide-react';
 import { getBestMove, type Difficulty } from './ChessAI';
+import PeerConnector from '../../online/PeerConnector';
 
 const Piece: React.FC<{ type: string; color: 'w' | 'b' }> = ({ type, color }) => {
   const isWhite = color === 'w';
@@ -85,14 +86,36 @@ const ChessGame: React.FC = () => {
   const [lastMove, setLastMove] = useState<{from: Square, to: Square} | null>(null);
 
   // New State for Game Mode
-  const [gameMode, setGameMode] = useState<'pvp' | 'pvc'>('pvc');
+  const [gameMode, setGameMode] = useState<'pvp' | 'pvc' | 'online'>('pvc');
   const [aiDifficulty, setAiDifficulty] = useState<Difficulty>('medium');
   const [showSetup, setShowSetup] = useState(true);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [connector] = useState(new PeerConnector());
+  const [myId, setMyId] = useState<string>('');
+  const [remoteId, setRemoteId] = useState<string>('');
+  const [myColor, setMyColor] = useState<'w' | 'b'>('w');
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     updateGameState();
   }, []);
+
+  useEffect(() => {
+    connector.onData((payload: any) => {
+      if (payload?.type === 'move') {
+        try {
+          const moveResult = game.move(payload.move);
+          if (moveResult) {
+            setLastMove({ from: moveResult.from, to: moveResult.to });
+            updateGameState();
+          }
+        } catch {}
+      } else if (payload?.type === 'start') {
+        setConnected(true);
+        setShowSetup(false);
+      }
+    });
+  }, [connector, game]);
 
   // AI Turn Effect
   useEffect(() => {
@@ -134,6 +157,7 @@ const ChessGame: React.FC = () => {
 
   const handleSquareClick = (rowIndex: number, colIndex: number) => {
     if (game.isGameOver() || showSetup || (gameMode === 'pvc' && game.turn() === 'b')) return;
+    if (gameMode === 'online' && game.turn() !== myColor) return;
 
     const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
     const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
@@ -154,6 +178,9 @@ const ChessGame: React.FC = () => {
                 updateGameState();
                 setSelectedSquare(null);
                 setPossibleMoves([]);
+                if (gameMode === 'online') {
+                  connector.send({ type: 'move', move: { from: selectedSquare, to: square, promotion: 'q' } });
+                }
                 return;
             }
         } catch (e) {
@@ -180,7 +207,7 @@ const ChessGame: React.FC = () => {
     }
   };
 
-  const startNewGame = (mode: 'pvp' | 'pvc', difficulty?: Difficulty) => {
+  const startNewGame = (mode: 'pvp' | 'pvc' | 'online', difficulty?: Difficulty) => {
       const newGame = new Chess();
       setGame(newGame);
       setBoard(newGame.board());
@@ -191,11 +218,31 @@ const ChessGame: React.FC = () => {
       setLastMove(null);
       setGameMode(mode);
       if (difficulty) setAiDifficulty(difficulty);
-      setShowSetup(false);
+      setShowSetup(mode === 'online');
   };
 
   const resetGame = () => {
     setShowSetup(true);
+  };
+
+  const createOnlineRoom = () => {
+    connector.create();
+    const timer = setInterval(() => {
+      if (connector.id) {
+        setMyId(connector.id);
+        clearInterval(timer);
+      }
+    }, 200);
+    setMyColor('w');
+  };
+
+  const joinOnlineRoom = () => {
+    if (!remoteId) return;
+    connector.connect(remoteId);
+    connector.send({ type: 'start' });
+    setMyColor('b');
+    setConnected(true);
+    setShowSetup(false);
   };
 
   return (
@@ -243,6 +290,37 @@ const ChessGame: React.FC = () => {
                   </button>
                  ))}
               </div>
+              <div className="space-y-3">
+                <div className="text-left text-slate-400 text-sm font-semibold uppercase tracking-wider ml-1">Chơi Online</div>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => { startNewGame('online'); createOnlineRoom(); }}
+                    className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
+                  >
+                    <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
+                      <Users size={20} />
+                    </div>
+                    <div className="text-left flex-grow">
+                      <div className="font-bold text-white">Tạo phòng</div>
+                      {myId && <div className="text-slate-400 text-xs mt-1">ID: {myId}</div>}
+                    </div>
+                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      value={remoteId}
+                      onChange={(e) => setRemoteId(e.target.value)}
+                      placeholder="Nhập ID phòng"
+                      className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
+                    />
+                    <button
+                      onClick={() => { startNewGame('online'); joinOnlineRoom(); }}
+                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
+                    >
+                      Vào phòng
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -258,6 +336,11 @@ const ChessGame: React.FC = () => {
         <div className="flex flex-col items-center">
             <div className="text-2xl font-black text-slate-200">VS</div>
             <div className="text-xs text-slate-500 font-mono mt-1">TURN {Math.floor(history.length / 2) + 1}</div>
+            {gameMode === 'online' && (
+              <div className={`text-xs mt-1 ${connected ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                {connected ? 'Đã kết nối' : 'Đang chờ kết nối'}
+              </div>
+            )}
         </div>
 
         <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${game.turn() === 'b' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
@@ -266,7 +349,13 @@ const ChessGame: React.FC = () => {
                  <span className="animate-pulse">Đang nghĩ...</span>
              </div>
           ) : (
-             <span>{gameMode === 'pvc' ? `Máy (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})` : 'Đen'}</span>
+             <span>{
+               gameMode === 'pvc'
+                 ? `Máy (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})`
+                 : gameMode === 'online'
+                   ? (myColor === 'w' ? 'Đối thủ' : 'Bạn')
+                   : 'Đen'
+             }</span>
           )}
           <div className="w-3 h-3 rounded-full bg-black border border-white"></div>
         </div>
