@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Crown, Shield, Swords } from 'lucide-react';
+import { ArrowLeft, Crown, Shield, Swords } from 'lucide-react';
 
 const TutorialPage: React.FC = () => {
   return (
