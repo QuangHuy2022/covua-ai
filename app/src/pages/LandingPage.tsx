@@ -44,7 +44,7 @@ const LandingPage: React.FC = () => {
             ✨ Trải nghiệm Board Game Đỉnh Cao
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight">
-            Chọn <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">Thử Thách</span> <br className="hidden md:block" />
+            Chọn <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-400 to-violet-400">Thử Thách</span> <br className="hidden md:block" />
             Của Bạn Ngay Hôm Nay
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
@@ -62,11 +62,11 @@ const LandingPage: React.FC = () => {
               style={{ animationDelay: `${index * 100}ms` }}
             >
               {/* Background Gradient */}
-              <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
+              <div className={`absolute inset-0 bg-linear-to-br ${game.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
               <div className="absolute inset-0" style={{ background: game.bgImage }} />
               
               <div className="relative z-10 flex flex-col h-full">
-                <div className="flex-grow">
+                <div className="grow">
                    {game.icon}
                    <h2 className="text-3xl font-bold text-white mb-3 group-hover:text-indigo-200 transition-colors">{game.name}</h2>
                    <p className="text-slate-400 group-hover:text-slate-200 transition-colors leading-relaxed">{game.description}</p>

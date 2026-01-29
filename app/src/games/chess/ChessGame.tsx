@@ -183,7 +183,7 @@ const ChessGame: React.FC = () => {
           } else {
               setWinner(null);
           }
-        } catch (e) {
+        } catch (e: unknown) {
             console.error("Move sync error:", e);
             // If move failed, try to recover from FEN if available
             if (payload.fen) {
@@ -210,19 +210,27 @@ const ChessGame: React.FC = () => {
     if (gameMode === 'pvc' && game.turn() === 'b' && !game.isGameOver() && !showSetup) {
         setIsAiThinking(true);
         const timer = setTimeout(() => {
-            const bestMove = getBestMove(game, aiDifficulty);
-            if (bestMove) {
-                const moveResult = game.move(bestMove);
-                if (moveResult) {
-                    setLastMove({ from: moveResult.from, to: moveResult.to });
-                    updateGameState();
+            try {
+                // Clone game to avoid side effects during calculation
+                const gameCopy = new Chess(game.fen());
+                const bestMove = getBestMove(gameCopy, aiDifficulty);
+                
+                if (bestMove) {
+                    // Apply move to the actual game instance
+                    const moveResult = game.move(bestMove);
+                    if (moveResult) {
+                        setLastMove({ from: moveResult.from, to: moveResult.to });
+                        updateGameState();
+                    }
                 }
+            } catch (error: unknown) {
+                console.error("AI Error:", error);
             }
             setIsAiThinking(false);
         }, 500);
         return () => clearTimeout(timer);
     }
-  }, [game, gameMode, aiDifficulty, showSetup]);
+  }, [game, gameMode, aiDifficulty, showSetup, history]);
 
   const handleSquareClick = (rowIndex: number, colIndex: number) => {
     if (game.isGameOver() || showSetup || (gameMode === 'pvc' && game.turn() === 'b')) return;
@@ -256,7 +264,7 @@ const ChessGame: React.FC = () => {
                 }
                 return;
             }
-        } catch (e) {
+        } catch (e: unknown) {
             // Illegal move, ignore
         }
     }
@@ -298,9 +306,8 @@ const ChessGame: React.FC = () => {
     startNewGame('online');
     connector.create().then((id) => {
         setMyId(id);
-    }).catch((err) => console.error(err));
+    }).catch((err: unknown) => console.error(err));
     setMyColor('w');
-    setShowSetup(false);
   };
 
   const joinOnlineRoom = () => {
@@ -351,7 +358,7 @@ const ChessGame: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-6xl mx-auto relative min-h-[600px]">
+    <div className="flex flex-col items-center gap-8 w-full max-w-[90rem] mx-auto relative min-h-[600px]">
       {/* Setup Modal */}
       {showSetup && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-xl animate-fade-in">
@@ -387,7 +394,7 @@ const ChessGame: React.FC = () => {
                     }`}>
                       <Cpu size={20} />
                     </div>
-                    <div className="text-left flex-grow">
+                    <div className="text-left grow">
                       <div className="font-bold text-white capitalize">
                         {level === 'easy' ? 'Dễ' : level === 'medium' ? 'Trung bình' : 'Khó'}
                       </div>
@@ -406,7 +413,7 @@ const ChessGame: React.FC = () => {
                       <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
                         <Users size={20} />
                       </div>
-                      <div className="text-left flex-grow">
+                      <div className="text-left grow">
                         <div className="font-bold text-white">Tạo phòng</div>
                       </div>
                     </button>
@@ -416,7 +423,7 @@ const ChessGame: React.FC = () => {
                        <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
                         <Users size={20} />
                       </div>
-                      <div className="text-left flex-grow min-w-0">
+                      <div className="text-left grow min-w-0">
                         <div className="font-bold text-white text-sm">ID Phòng của bạn</div>
                         <div className="text-cyan-300 font-mono text-xl font-bold tracking-wider">{myId}</div>
                       </div>
@@ -485,11 +492,11 @@ const ChessGame: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8 w-full items-start justify-center">
+      <div className="flex flex-col gap-8 w-full items-center justify-center">
           {/* Chessboard */}
           <div className="relative group shrink-0">
-            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
-            <div className="relative grid grid-cols-8 border-[12px] border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-800">
+            <div className="absolute -inset-1 bg-linear-to-r from-indigo-500 to-violet-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
+            <div className="relative grid grid-cols-8 border-12 border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-800">
             {Array.from({ length: 8 }).map((_, rIndex) => {
               const rowIndex = myColor === 'b' ? 7 - rIndex : rIndex;
               const row = board[rowIndex];
@@ -513,8 +520,8 @@ const ChessGame: React.FC = () => {
                     className={`
                         w-12 h-12 sm:w-20 sm:h-20 flex items-center justify-center cursor-pointer relative
                         ${isDark ? 'bg-[#779556]' : 'bg-[#ebecd0]'}
-                        ${isSelected ? '!bg-[#baca44]' : ''}
-                        ${(isLastFrom || isLastTo) ? '!bg-[#f5f682]' : ''}
+                        ${isSelected ? 'bg-[#baca44]!' : ''}
+                        ${(isLastFrom || isLastTo) ? 'bg-[#f5f682]!' : ''}
                         transition-colors duration-0
                     `}
                     onClick={() => handleSquareClick(rowIndex, colIndex)}
@@ -533,7 +540,7 @@ const ChessGame: React.FC = () => {
 
                     {/* Move Indicator */}
                     {isPossibleMove && (
-                        <div className={`absolute w-3 h-3 sm:w-4 sm:h-4 rounded-full z-10 ${piece ? 'border-[4px] border-slate-400/50 w-full h-full rounded-none !bg-transparent' : 'bg-black/10'}`} />
+                        <div className={`absolute w-3 h-3 sm:w-4 sm:h-4 rounded-full z-10 ${piece ? 'border-4 border-slate-400/50 w-full h-full rounded-none bg-transparent!' : 'bg-black/10'}`} />
                     )}
                     
                     {/* Check Indicator */}
@@ -567,22 +574,22 @@ const ChessGame: React.FC = () => {
             </div>
             )}
           </div>
-
+          
           {/* Sidebar / History */}
-          <div className="w-full max-w-[500px] flex flex-col gap-4">
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-48 flex flex-col shadow-lg">
-                  <h3 className="text-slate-200 font-bold mb-2 flex items-center gap-2 border-b border-slate-700 pb-2">
+          <div className="w-full max-w-[500px] flex flex-col gap-4 h-[550px]">
+              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 grow overflow-hidden flex flex-col shadow-lg">
+                  <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
                       <RotateCcw size={18} /> Lịch sử nước đi
                   </h3>
-                  <div className="overflow-y-auto flex-grow space-y-1 pr-2 custom-scrollbar grid grid-cols-2 gap-x-4 content-start">
+                  <div className="overflow-y-auto grow space-y-1 pr-2 custom-scrollbar">
                       {history.length === 0 && (
-                          <div className="text-slate-500 text-center italic py-4 col-span-2">Chưa có nước đi nào</div>
+                          <div className="text-slate-500 text-center italic py-4">Chưa có nước đi nào</div>
                       )}
                       {Array.from({ length: Math.ceil(history.length / 2) }).map((_, i) => (
-                          <div key={i} className="flex text-sm border-b border-slate-700/30 pb-1">
-                              <div className="w-8 text-slate-500 font-mono">{i + 1}.</div>
-                              <div className="flex-1 font-mono text-slate-300 font-bold">{history[2 * i]}</div>
-                              <div className="flex-1 font-mono text-slate-300 font-bold">{history[2 * i + 1]}</div>
+                          <div key={i} className="flex text-sm">
+                              <div className="w-8 text-slate-500 py-1">{i + 1}.</div>
+                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2 mr-2">{history[2 * i]}</div>
+                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2">{history[2 * i + 1]}</div>
                           </div>
                       ))}
                   </div>
@@ -603,21 +610,6 @@ const ChessGame: React.FC = () => {
                            </button>
                        )}
                    </div>
-                   {gameMode === 'online' && myId && (
-                     <div className="mt-3 p-3 bg-slate-700 rounded-lg border border-slate-600 flex items-center justify-between">
-                        <div>
-                          <div className="text-slate-300 text-sm">ID Phòng</div>
-                          <div className="text-cyan-300 font-mono text-lg font-bold tracking-wider">{myId}</div>
-                        </div>
-                        <button
-                          onClick={handleCopyId}
-                          className="p-2 hover:bg-slate-600 rounded-lg text-slate-300 hover:text-white transition-colors"
-                          title="Sao chép ID"
-                        >
-                          {copied ? <Check size={18} className="text-emerald-400" /> : <Copy size={18} />}
-                        </button>
-                     </div>
-                   )}
               </div>
           </div>
       </div>

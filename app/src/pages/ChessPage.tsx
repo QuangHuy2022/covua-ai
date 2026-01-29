@@ -15,7 +15,7 @@ const ChessPage: React.FC = () => {
                 <Link to="/" className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
                   <ArrowLeft className="w-5 h-5" />
                 </Link>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-linear-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
                   Cờ Vua
                 </h1>
              </div>
@@ -48,7 +48,7 @@ const ChessPage: React.FC = () => {
               </ul>
             </div>
 
-            <div className="bg-gradient-to-br from-indigo-900/20 to-violet-900/20 p-6 rounded-2xl border border-indigo-500/20">
+            <div className="bg-linear-to-br from-indigo-900/20 to-violet-900/20 p-6 rounded-2xl border border-indigo-500/20">
               <div className="flex items-center gap-2 mb-3 text-indigo-300">
                 <Info className="w-5 h-5" />
                 <h3 className="font-bold">Mẹo chơi</h3>

@@ -4,7 +4,6 @@ import LandingPage from './pages/LandingPage';
 import ChessPage from './pages/ChessPage';
 import XiangqiPage from './pages/XiangqiPage';
 import GoPage from './pages/GoPage';
-import TutorialPage from './pages/TutorialPage';
 
 function App() {
   return (
@@ -15,7 +14,6 @@ function App() {
           <Route path="chess" element={<ChessPage />} />
           <Route path="xiangqi" element={<XiangqiPage />} />
           <Route path="go" element={<GoPage />} />
-          <Route path="tutorial" element={<TutorialPage />} />
         </Route>
       </Routes>
     </Router>

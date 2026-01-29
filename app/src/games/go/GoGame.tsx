@@ -79,15 +79,22 @@ const GoGame: React.FC = () => {
     connector.onData((payload: any) => {
         if (payload?.type === 'move') {
             const { r, c } = payload.move;
-            const currentBoard = boardRef.current;
-            const currentTurn = turnRef.current;
-            const currentHistory = historyRef.current;
             
-            const prevBoard = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1].board : undefined;
-            const result = tryMakeMove(currentBoard, r, c, currentTurn, prevBoard);
-            
-            if (result.success && result.newBoard) {
-                executeMove(result.newBoard, result.captured, {r, c}, false);
+            // If sender provided the full board state (Robust Sync), use it directly
+            if (payload.board) {
+                 executeMove(payload.board, payload.captured, {r, c}, false);
+            } else {
+                // Fallback: Calculate locally (Legacy or minimal payload)
+                const currentBoard = boardRef.current;
+                const currentTurn = turnRef.current;
+                const currentHistory = historyRef.current;
+                
+                const prevBoard = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1].board : undefined;
+                const result = tryMakeMove(currentBoard, r, c, currentTurn, prevBoard);
+                
+                if (result.success && result.newBoard) {
+                    executeMove(result.newBoard, result.captured, {r, c}, false);
+                }
             }
         } else if (payload?.type === 'pass') {
             passTurn(false);
@@ -115,20 +122,27 @@ const GoGame: React.FC = () => {
     if (gameMode === 'pvc' && turn === 'w' && !gameOver && !showSetup) {
         setIsAiThinking(true);
         const timer = setTimeout(() => {
-            // Pass previous board for Ko check
-            const prevBoard = history.length > 0 ? history[history.length - 1].board : undefined;
-            const bestMove = getBestMove(board, 'w', aiDifficulty, prevBoard);
-            
-            if (bestMove) {
-                const result = tryMakeMove(board, bestMove.r, bestMove.c, 'w', prevBoard);
-                if (result.success && result.newBoard) {
-                    executeMove(result.newBoard, result.captured, bestMove);
+            try {
+                // Pass previous board for Ko check
+                const prevBoard = history.length > 0 ? history[history.length - 1].board : undefined;
+                // Clone board for AI safety
+                const boardCopy = board.map(row => [...row]);
+                const bestMove = getBestMove(boardCopy, 'w', aiDifficulty, prevBoard);
+                
+                if (bestMove) {
+                    const result = tryMakeMove(board, bestMove.r, bestMove.c, 'w', prevBoard);
+                    if (result.success && result.newBoard) {
+                        executeMove(result.newBoard, result.captured, bestMove);
+                    } else {
+                        // AI failed to find valid move? Pass.
+                        passTurn();
+                    }
                 } else {
-                    // AI failed to find valid move? Pass.
+                    // Pass
                     passTurn();
                 }
-            } else {
-                // Pass
+            } catch (error: unknown) {
+                console.error("AI Error:", error);
                 passTurn();
             }
             setIsAiThinking(false);
@@ -160,7 +174,8 @@ const GoGame: React.FC = () => {
     }
 
     if (sendToPeer && gameMode === 'online') {
-        connector.send({ type: 'move', move: moveLoc });
+        // Send full board state for robust sync
+        connector.send({ type: 'move', move: moveLoc, board: newBoard, captured });
     }
   };
 
@@ -223,7 +238,7 @@ const GoGame: React.FC = () => {
     startNewGame('online');
     connector.create().then((id) => {
         setMyId(id);
-    }).catch((err) => console.error(err));
+    }).catch((err: unknown) => console.error(err));
     setMyColor('w');
     setShowSetup(false);
   };
@@ -331,7 +346,7 @@ const GoGame: React.FC = () => {
                     }`}>
                       <Cpu size={20} />
                     </div>
-                    <div className="text-left flex-grow">
+                    <div className="text-left grow">
                       <div className="font-bold text-white capitalize">
                         {level === 'easy' ? 'Dễ' : level === 'medium' ? 'Trung bình' : 'Khó'}
                       </div>
@@ -350,7 +365,7 @@ const GoGame: React.FC = () => {
                       <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
                         <Users size={20} />
                       </div>
-                      <div className="text-left flex-grow">
+                      <div className="text-left grow">
                         <div className="font-bold text-white">Tạo phòng</div>
                       </div>
                     </button>
@@ -360,7 +375,7 @@ const GoGame: React.FC = () => {
                        <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
                         <Users size={20} />
                       </div>
-                      <div className="text-left flex-grow min-w-0">
+                      <div className="text-left grow min-w-0">
                         <div className="font-bold text-white text-sm">ID Phòng của bạn</div>
                         <div className="text-cyan-300 font-mono text-xl font-bold tracking-wider">{myId}</div>
                       </div>
