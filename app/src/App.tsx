@@ -4,16 +4,20 @@ import LandingPage from './pages/LandingPage';
 import ChessPage from './pages/ChessPage';
 import XiangqiPage from './pages/XiangqiPage';
 import GoPage from './pages/GoPage';
+import TutorialPage from './pages/TutorialPage';
+import ScrollToTop from './components/ScrollToTop';
 
 function App() {
   return (
     <Router>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<MainLayout />}>
           <Route index element={<LandingPage />} />
           <Route path="chess" element={<ChessPage />} />
           <Route path="xiangqi" element={<XiangqiPage />} />
           <Route path="go" element={<GoPage />} />
+          <Route path="tutorial" element={<TutorialPage />} />
         </Route>
       </Routes>
     </Router>

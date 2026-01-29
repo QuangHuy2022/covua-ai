@@ -34,6 +34,8 @@ const GoGame: React.FC = () => {
   const [myColor, setMyColor] = useState<Stone>('b');
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rematchState, setRematchState] = useState<'idle' | 'sent' | 'received'>('idle');
+  const [passes, setPasses] = useState(0);
 
   // Refs for stable access in callbacks
   const boardRef = React.useRef(board);
@@ -43,6 +45,8 @@ const GoGame: React.FC = () => {
   const gameModeRef = React.useRef(gameMode);
   const capturedBlackRef = React.useRef(capturedBlack);
   const capturedWhiteRef = React.useRef(capturedWhite);
+  const rematchStateRef = React.useRef(rematchState);
+  const passesRef = React.useRef(passes);
 
   useEffect(() => { boardRef.current = board; }, [board]);
   useEffect(() => { turnRef.current = turn; }, [turn]);
@@ -51,6 +55,8 @@ const GoGame: React.FC = () => {
   useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
   useEffect(() => { capturedBlackRef.current = capturedBlack; }, [capturedBlack]);
   useEffect(() => { capturedWhiteRef.current = capturedWhite; }, [capturedWhite]);
+  useEffect(() => { rematchStateRef.current = rematchState; }, [rematchState]);
+  useEffect(() => { passesRef.current = passes; }, [passes]);
 
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -156,20 +162,28 @@ const GoGame: React.FC = () => {
   }, [board, turn, gameMode, aiDifficulty, showSetup, gameOver]);
 
   const executeMove = (newBoard: Board, captured: number, moveLoc: {r: number, c: number}, sendToPeer = true) => {
+    // Use refs for stable state access
+    const currentBoard = boardRef.current;
+    const currentTurn = turnRef.current;
+    const currentCapturedBlack = capturedBlackRef.current;
+    const currentCapturedWhite = capturedWhiteRef.current;
+    const currentPasses = passesRef.current;
+
     // Save history
     setHistory(prev => [...prev, {
-        board: board.map(row => [...row]),
-        turn,
-        capturedBlack,
-        capturedWhite,
-        passes: 0
+        board: currentBoard.map(row => [...row]),
+        turn: currentTurn,
+        capturedBlack: currentCapturedBlack,
+        capturedWhite: currentCapturedWhite,
+        passes: currentPasses
     }]);
 
     // Update State
     setBoard(newBoard);
     setLastMove(moveLoc);
+    setPasses(0); // Reset passes on valid move
     
-    if (turn === 'b') {
+    if (currentTurn === 'b') {
         setCapturedWhite(prev => prev + captured);
         setTurn('w');
     } else {
@@ -177,7 +191,7 @@ const GoGame: React.FC = () => {
         setTurn('b');
     }
 
-    if (sendToPeer && gameMode === 'online') {
+    if (sendToPeer && gameModeRef.current === 'online') {
         // Send full board state for robust sync
         connector.send({ type: 'move', move: moveLoc, board: newBoard, captured });
     }
@@ -205,24 +219,30 @@ const GoGame: React.FC = () => {
 
       // Save history
       const currentTurn = turnRef.current;
+      const currentPasses = passesRef.current;
+      
       setHistory(prev => [...prev, {
         board: boardRef.current.map(row => [...row]),
         turn: currentTurn,
         capturedBlack: capturedBlackRef.current,
         capturedWhite: capturedWhiteRef.current,
-        passes: 0 // Ideally increment pass count
+        passes: currentPasses
       }]);
 
-      setTurn(prev => prev === 'b' ? 'w' : 'b');
+      const newPasses = currentPasses + 1;
+      setPasses(newPasses);
+
+      if (newPasses >= 2) {
+          setGameOver(true);
+      } else {
+          setTurn(prev => prev === 'b' ? 'w' : 'b');
+      }
+      
       setLastMove(null);
 
       if (sendToPeer && gameModeRef.current === 'online') {
           connector.send({ type: 'pass' });
       }
-
-      // Simple game over check logic: 2 passes = game over
-      // Here we assume if AI passes, it might be game over if player also passed.
-      // But for simplicity, we just toggle turn.
   };
 
   const startNewGame = (mode: 'pvp' | 'pvc' | 'online', difficulty?: Difficulty) => {
@@ -234,15 +254,29 @@ const GoGame: React.FC = () => {
     setGameOver(false);
     setLastMove(null);
     setGameMode(mode);
+    setRematchState('idle'); // Reset rematch state
     if (difficulty) setAiDifficulty(difficulty);
-    setShowSetup(mode === 'online');
+    // Always hide setup when starting a new game
+    setShowSetup(false);
   };
 
   const createOnlineRoom = () => {
     startNewGame('online');
     connector.create().then((id) => {
         setMyId(id);
-        setMyColor('w');
+        setMyColor('w'); // Wait, default for creator should be Black (first) or White?
+        // In Go, Black goes first. Usually host is Black.
+        // But in `createOnlineRoom` original code it set `setMyColor('w')`?
+        // Let's check original code. 
+        // Original: setMyColor('w');
+        // Original join: setMyColor('b');
+        // This means Host is White (Second), Joiner is Black (First)?
+        // That's unusual but I will respect existing logic unless it's wrong.
+        // In Xiangqi, host was Red (First).
+        // Let's check logic:
+        // Joiner sends 'start'. Host waits.
+        // If Joiner is Black (First), Joiner moves first.
+        // Seems consistent.
         setShowSetup(false);
     }).catch((err: unknown) => console.error(err));
   };
@@ -268,6 +302,26 @@ const GoGame: React.FC = () => {
 
   const resetGame = () => {
     setShowSetup(true);
+    setRematchState('idle');
+  };
+
+  const handleRematchRequest = () => {
+      connector.send({ type: 'rematch_request' });
+      setRematchState('sent');
+  };
+
+  const handleRematchAccept = () => {
+      connector.send({ type: 'rematch_accept' });
+      startNewGame('online');
+      setMyColor(myColorRef.current);
+      setConnected(true);
+      setRematchState('idle');
+  };
+
+  const handleRematchDecline = () => {
+      connector.send({ type: 'rematch_decline' });
+      setRematchState('idle');
+      // Maybe close modal?
   };
 
   const undoMove = () => {
@@ -554,6 +608,69 @@ const GoGame: React.FC = () => {
           >
             {copied ? <Check size={18} className="text-emerald-400" /> : <Copy size={18} />}
           </button>
+        </div>
+      )}
+
+      {gameOver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl text-center border border-slate-700 transform scale-100 animate-in zoom-in-95 duration-300">
+                <h2 className="text-4xl font-bold text-white mb-6 bg-linear-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
+                    {capturedBlack > capturedWhite ? 'Đen thắng!' : capturedWhite > capturedBlack ? 'Trắng thắng!' : 'Hòa!'}
+                </h2>
+                <div className="text-slate-300 mb-6">
+                    <div>Đen bắt: {capturedBlack}</div>
+                    <div>Trắng bắt: {capturedWhite}</div>
+                </div>
+                <div className="flex gap-4 justify-center">
+                    {gameMode === 'online' ? (
+                        rematchState === 'received' ? (
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleRematchAccept}
+                                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                                >
+                                    Đồng ý tái đấu
+                                </button>
+                                <button
+                                    onClick={handleRematchDecline}
+                                    className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                                >
+                                    Từ chối
+                                </button>
+                            </div>
+                        ) : rematchState === 'sent' ? (
+                            <button
+                                disabled
+                                className="px-8 py-3 bg-slate-600 text-slate-300 rounded-xl font-bold transition-all cursor-not-allowed"
+                            >
+                                Đang chờ đối thủ...
+                            </button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleRematchRequest}
+                                    className="px-8 py-3 bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                                >
+                                    Tái đấu
+                                </button>
+                                <button
+                                    onClick={resetGame}
+                                    className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                                >
+                                    Thoát
+                                </button>
+                            </div>
+                        )
+                    ) : (
+                        <button
+                            onClick={resetGame}
+                            className="px-8 py-3 bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                        >
+                            Chơi lại
+                        </button>
+                    )}
+                </div>
+            </div>
         </div>
       )}
     </div>

@@ -106,12 +106,41 @@ const ChessGame: React.FC = () => {
   useEffect(() => { myColorRef.current = myColor; }, [myColor]);
   useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
 
+  const startNewGame = (mode: 'pvp' | 'pvc' | 'online', difficulty?: Difficulty) => {
+      const newGame = new Chess();
+      setGame(newGame);
+      setBoard(newGame.board());
+      setWinner(null);
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      setHistory([]);
+      setLastMove(null);
+      setGameMode(mode);
+      if (difficulty) setAiDifficulty(difficulty);
+      
+      // Don't show setup if we are just restarting an online game (rematch)
+      // The caller will handle connection/rematch logic
+      if (mode !== 'online') {
+        setShowSetup(false); 
+      } else {
+        // If online, we generally don't want to show setup unless it's a fresh entry?
+        // Actually, startNewGame is called by create/join/rematch.
+        // create/join explicitly call setShowSetup(false).
+        // rematch calls startNewGame('online').
+        // So we should default to NOT showing setup here, or let the caller decide.
+        // Let's set it to false here to be safe for rematches, and rely on initial state = true for first load.
+        setShowSetup(false);
+      }
+      setRematchState('none');
+  };
+
   const updateGameState = () => {
-    setBoard(game.board());
-    setHistory([...game.history()]);
-    if (game.isGameOver()) {
-        if (game.isCheckmate()) {
-            setWinner(game.turn() === 'w' ? 'b' : 'w');
+    const currentGame = gameRef.current;
+    setBoard(currentGame.board());
+    setHistory([...currentGame.history()]);
+    if (currentGame.isGameOver()) {
+        if (currentGame.isCheckmate()) {
+            setWinner(currentGame.turn() === 'w' ? 'b' : 'w');
         } else {
             setWinner('draw');
         }
@@ -196,9 +225,6 @@ const ChessGame: React.FC = () => {
       } else if (payload?.type === 'rematch_accept') {
         setRematchState('none');
         startNewGame('online');
-        // Ensure colors swap or stay same? Usually online games might swap, but let's keep simple for now.
-        // Actually, if we just reset, we keep same colors unless we logic for it.
-        // The requester (who clicked New Game) is usually one, but both reset.
       }
     });
   }, [connector]);
@@ -279,21 +305,6 @@ const ChessGame: React.FC = () => {
     }
   };
 
-  const startNewGame = (mode: 'pvp' | 'pvc' | 'online', difficulty?: Difficulty) => {
-      const newGame = new Chess();
-      setGame(newGame);
-      setBoard(newGame.board());
-      setWinner(null);
-      setSelectedSquare(null);
-      setPossibleMoves([]);
-      setHistory([]);
-      setLastMove(null);
-      setGameMode(mode);
-      if (difficulty) setAiDifficulty(difficulty);
-      setShowSetup(mode === 'online');
-      setRematchState('none');
-  };
-
   const createOnlineRoom = () => {
     startNewGame('online');
     connector.create().then((id) => {
@@ -330,6 +341,11 @@ const ChessGame: React.FC = () => {
       connector.send({ type: 'rematch_accept' });
       setRematchState('none');
       startNewGame('online');
+  };
+
+  const handleRematchDecline = () => {
+      connector.send({ type: 'rematch_decline' });
+      setRematchState('none');
   };
 
   const resetGame = () => {
@@ -703,9 +719,14 @@ const ChessGame: React.FC = () => {
                         ) : (
                             <div className="flex flex-col gap-2">
                                 <span className="text-indigo-300 font-bold">Đối thủ muốn tái đấu!</span>
-                                <button onClick={acceptRematch} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold">
-                                    Đồng ý
-                                </button>
+                                <div className="flex gap-2 justify-center">
+                                    <button onClick={acceptRematch} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold">
+                                        Đồng ý
+                                    </button>
+                                    <button onClick={handleRematchDecline} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold">
+                                        Từ chối
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
