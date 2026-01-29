@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Info } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import ChessGame from '../games/chess/ChessGame';
 
 const ChessPage: React.FC = () => {
