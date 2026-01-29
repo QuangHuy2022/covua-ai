@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Chess, type Square } from 'chess.js';
-import { RefreshCw, RotateCcw, Cpu, Users, Copy, Check } from 'lucide-react';
+import { RefreshCw, RotateCcw, Cpu, Users, Copy, Check, BookOpen, Info, Swords } from 'lucide-react';
 import { getBestMove, type Difficulty } from './ChessAI';
 import PeerConnector from '../../online/PeerConnector';
 
 const Piece: React.FC<{ type: string; color: 'w' | 'b' }> = ({ type, color }) => {
   const isWhite = color === 'w';
-  // Use SVG paths directly for better scaling and customization
   const pieces: Record<string, React.ReactNode> = {
     p: (
       <svg viewBox="0 0 45 45" className="w-full h-full drop-shadow-lg">
@@ -96,6 +95,7 @@ const ChessGame: React.FC = () => {
   const [myColor, setMyColor] = useState<'w' | 'b'>('w');
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rematchState, setRematchState] = useState<'none' | 'sent' | 'received'>('none');
 
   // Refs for stable access in callbacks
   const gameRef = React.useRef(game);
@@ -138,22 +138,11 @@ const ChessGame: React.FC = () => {
     };
   }, []);
 
-  // Monitor connection errors
-  useEffect(() => {
-      // We need a way to listen to connection errors from PeerConnector
-      // Since PeerConnector doesn't expose on('error') directly, we might need to modify it
-      // But for now, we can rely on connection state.
-  }, []);
-
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
       if (myColorRef.current === 'b') { // Only guest sends start
           connector.send({ type: 'start' });
-      } else {
-        // Host also needs to know they are connected if the connection was initiated by guest
-        // But usually, receiving 'start' handles this. 
-        // However, if 'start' is missed or delayed, this provides immediate feedback.
       }
     });
 
@@ -161,15 +150,22 @@ const ChessGame: React.FC = () => {
       if (payload?.type === 'move') {
         try {
           const currentGame = gameRef.current;
-          
-          // Force sync if FEN is provided and differs
-          if (payload.fen && payload.fen !== currentGame.fen()) {
+          let moveSuccess = false;
+
+          // Try to apply move first to preserve history
+          try {
+             const result = currentGame.move(payload.move);
+             if (result) moveSuccess = true;
+          } catch (e) {
+             console.warn("Move failed, trying FEN fallback", e);
+          }
+
+          // Fallback to FEN if move failed
+          if (!moveSuccess && payload.fen) {
              currentGame.load(payload.fen);
-          } else {
-             currentGame.move(payload.move);
           }
           
-          setBoard([...currentGame.board()]); // Force new array reference
+          setBoard([...currentGame.board()]);
           setHistory([...currentGame.history()]);
           setLastMove({ from: payload.move.from, to: payload.move.to });
           
@@ -185,13 +181,6 @@ const ChessGame: React.FC = () => {
           }
         } catch (e: unknown) {
             console.error("Move sync error:", e);
-            // If move failed, try to recover from FEN if available
-            if (payload.fen) {
-                try {
-                    gameRef.current.load(payload.fen);
-                    updateGameState();
-                } catch {}
-            }
         }
       } else if (payload?.type === 'start') {
         setConnected(true);
@@ -202,21 +191,28 @@ const ChessGame: React.FC = () => {
         currentGame.undo();
         updateGameState();
         setLastMove(null);
+      } else if (payload?.type === 'rematch_request') {
+        setRematchState('received');
+      } else if (payload?.type === 'rematch_accept') {
+        setRematchState('none');
+        startNewGame('online');
+        // Ensure colors swap or stay same? Usually online games might swap, but let's keep simple for now.
+        // Actually, if we just reset, we keep same colors unless we logic for it.
+        // The requester (who clicked New Game) is usually one, but both reset.
       }
     });
   }, [connector]);
+
   // AI Turn Effect
   useEffect(() => {
     if (gameMode === 'pvc' && game.turn() === 'b' && !game.isGameOver() && !showSetup) {
         setIsAiThinking(true);
         const timer = setTimeout(() => {
             try {
-                // Clone game to avoid side effects during calculation
                 const gameCopy = new Chess(game.fen());
                 const bestMove = getBestMove(gameCopy, aiDifficulty);
                 
                 if (bestMove) {
-                    // Apply move to the actual game instance
                     const moveResult = game.move(bestMove);
                     if (moveResult) {
                         setLastMove({ from: moveResult.from, to: moveResult.to });
@@ -240,14 +236,12 @@ const ChessGame: React.FC = () => {
     const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
     const square = `${files[colIndex]}${ranks[rowIndex]}` as Square;
 
-    // Logic 1: Try to move if a square is already selected
     if (selectedSquare) {
-        // Attempt to move
         try {
             const move = game.move({
                 from: selectedSquare,
                 to: square,
-                promotion: 'q', // Always promote to queen for simplicity for now
+                promotion: 'q',
             });
 
             if (move) {
@@ -259,25 +253,22 @@ const ChessGame: React.FC = () => {
                   connector.send({ 
                       type: 'move', 
                       move: { from: selectedSquare, to: square, promotion: 'q' },
-                      fen: game.fen() // Send FEN for robust sync
+                      fen: game.fen() 
                   });
                 }
                 return;
             }
         } catch (e: unknown) {
-            // Illegal move, ignore
+            // Illegal move
         }
     }
 
-    // Logic 2: Select a piece
     const piece = game.get(square);
     if (piece && piece.color === game.turn()) {
-        // If clicking on same piece, toggle off
         if (selectedSquare === square) {
             setSelectedSquare(null);
             setPossibleMoves([]);
         } else {
-            // Select new piece
             setSelectedSquare(square);
             const moves = game.moves({ square, verbose: true }).map((m) => m.to as Square);
             setPossibleMoves(moves);
@@ -300,6 +291,7 @@ const ChessGame: React.FC = () => {
       setGameMode(mode);
       if (difficulty) setAiDifficulty(difficulty);
       setShowSetup(mode === 'online');
+      setRematchState('none');
   };
 
   const createOnlineRoom = () => {
@@ -312,13 +304,6 @@ const ChessGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
-
-    // Validate ID format (6 alphanumeric characters)
-    if (!/^[A-Z0-9]{6}$/.test(remoteId.toUpperCase())) {
-        alert("Mã phòng phải gồm 6 ký tự (chữ hoặc số)!");
-        return;
-    }
-    
     if (remoteId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
@@ -327,6 +312,24 @@ const ChessGame: React.FC = () => {
     connector.connect(remoteId);
     setMyColor('b');
     setShowSetup(false);
+  };
+
+  const handleResetOrRematch = () => {
+    if (gameMode === 'online') {
+        // Send rematch request
+        if (rematchState === 'none') {
+            connector.send({ type: 'rematch_request' });
+            setRematchState('sent');
+        }
+    } else {
+        resetGame();
+    }
+  };
+
+  const acceptRematch = () => {
+      connector.send({ type: 'rematch_accept' });
+      setRematchState('none');
+      startNewGame('online');
   };
 
   const resetGame = () => {
@@ -346,8 +349,8 @@ const ChessGame: React.FC = () => {
     
     if (gameMode === 'pvc') {
         if (isAiThinking) return;
-        game.undo(); // Undo AI
-        game.undo(); // Undo Player
+        game.undo();
+        game.undo();
         updateGameState();
         setLastMove(null);
     } else {
@@ -357,8 +360,37 @@ const ChessGame: React.FC = () => {
     }
   };
 
+  const getCapturedPieces = () => {
+      const initialCounts: Record<string, number> = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 0 }; // King not captured
+      const currentWhite: Record<string, number> = { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 };
+      const currentBlack: Record<string, number> = { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 };
+      
+      // Count current pieces
+      board.forEach(row => {
+          row.forEach(piece => {
+              if (piece) {
+                  if (piece.color === 'w') currentWhite[piece.type]++;
+                  else currentBlack[piece.type]++;
+              }
+          });
+      });
+
+      // Calculate missing
+      const whiteCaptured: string[] = []; // Black pieces captured by White
+      const blackCaptured: string[] = []; // White pieces captured by Black
+
+      for (const type in initialCounts) {
+          const count = initialCounts[type];
+          for (let i = 0; i < count - currentBlack[type]; i++) whiteCaptured.push(type);
+          for (let i = 0; i < count - currentWhite[type]; i++) blackCaptured.push(type);
+      }
+      return { whiteCaptured, blackCaptured };
+  };
+
+  const { whiteCaptured, blackCaptured } = getCapturedPieces();
+
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-[90rem] mx-auto relative min-h-[600px]">
+    <div className="flex flex-col xl:flex-row gap-8 w-full max-w-[90rem] mx-auto relative min-h-[600px] items-start justify-center">
       {/* Setup Modal */}
       {showSetup && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-xl animate-fade-in">
@@ -457,50 +489,51 @@ const ChessGame: React.FC = () => {
         </div>
       )}
 
-      {/* Game Info Header */}
-      <div className="flex justify-between items-center w-full bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
-        <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${game.turn() === 'w' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
-          <div className="w-3 h-3 rounded-full bg-white"></div>
-          {gameMode === 'pvc' ? 'Bạn' : 'Trắng'}
-        </div>
-        
-        <div className="flex flex-col items-center">
-            <div className="text-2xl font-black text-slate-200">VS</div>
-            <div className="text-xs text-slate-500 font-mono mt-1">TURN {Math.floor(history.length / 2) + 1}</div>
-            {gameMode === 'online' && (
-              <div className={`text-xs mt-1 ${connected ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                {connected ? 'Đã kết nối' : 'Đang chờ kết nối'}
-              </div>
+      {/* Main Game Column */}
+      <div className="flex flex-col gap-6 w-full max-w-[800px]">
+        {/* Game Info Header */}
+        <div className="flex justify-between items-center w-full bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
+            <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${game.turn() === 'w' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+            <div className="w-3 h-3 rounded-full bg-white"></div>
+            {gameMode === 'pvc' ? 'Bạn' : 'Trắng'}
+            </div>
+            
+            <div className="flex flex-col items-center">
+                <div className="text-2xl font-black text-slate-200">VS</div>
+                <div className="text-xs text-slate-500 font-mono mt-1">TURN {Math.floor(history.length / 2) + 1}</div>
+                {gameMode === 'online' && (
+                <div className={`text-xs mt-1 ${connected ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                    {connected ? 'Đã kết nối' : 'Đang chờ kết nối'}
+                </div>
+                )}
+            </div>
+
+            <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${game.turn() === 'b' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+            {gameMode === 'pvc' && isAiThinking ? (
+                <div className="flex items-center gap-2">
+                    <span className="animate-pulse">Đang nghĩ...</span>
+                </div>
+            ) : (
+                <span>{
+                gameMode === 'pvc'
+                    ? `Máy (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})`
+                    : gameMode === 'online'
+                    ? (myColor === 'w' ? 'Đối thủ' : 'Bạn')
+                    : 'Đen'
+                }</span>
             )}
+            <div className="w-3 h-3 rounded-full bg-black border border-white"></div>
+            </div>
         </div>
 
-        <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${game.turn() === 'b' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
-          {gameMode === 'pvc' && isAiThinking ? (
-             <div className="flex items-center gap-2">
-                 <span className="animate-pulse">Đang nghĩ...</span>
-             </div>
-          ) : (
-             <span>{
-               gameMode === 'pvc'
-                 ? `Máy (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})`
-                 : gameMode === 'online'
-                   ? (myColor === 'w' ? 'Đối thủ' : 'Bạn')
-                   : 'Đen'
-             }</span>
-          )}
-          <div className="w-3 h-3 rounded-full bg-black border border-white"></div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-8 w-full items-center justify-center">
-          {/* Chessboard */}
-          <div className="relative group shrink-0">
+        {/* Chessboard */}
+        <div className="relative group shrink-0 self-center">
             <div className="absolute -inset-1 bg-linear-to-r from-indigo-500 to-violet-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
             <div className="relative grid grid-cols-8 border-12 border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-800">
             {Array.from({ length: 8 }).map((_, rIndex) => {
-              const rowIndex = myColor === 'b' ? 7 - rIndex : rIndex;
-              const row = board[rowIndex];
-              return Array.from({ length: 8 }).map((_, cIndex) => {
+                const rowIndex = myColor === 'b' ? 7 - rIndex : rIndex;
+                const row = board[rowIndex];
+                return Array.from({ length: 8 }).map((_, cIndex) => {
                 const colIndex = myColor === 'b' ? 7 - cIndex : cIndex;
                 const piece = row[colIndex];
                 
@@ -518,7 +551,7 @@ const ChessGame: React.FC = () => {
                     <div
                     key={`${rowIndex}-${colIndex}`}
                     className={`
-                        w-12 h-12 sm:w-20 sm:h-20 flex items-center justify-center cursor-pointer relative
+                        w-10 h-10 sm:w-16 sm:h-16 md:w-20 md:h-20 flex items-center justify-center cursor-pointer relative
                         ${isDark ? 'bg-[#779556]' : 'bg-[#ebecd0]'}
                         ${isSelected ? 'bg-[#baca44]!' : ''}
                         ${(isLastFrom || isLastTo) ? 'bg-[#f5f682]!' : ''}
@@ -526,7 +559,6 @@ const ChessGame: React.FC = () => {
                     `}
                     onClick={() => handleSquareClick(rowIndex, colIndex)}
                     >
-                    {/* Coordinates */}
                     {cIndex === 0 && (
                         <span className={`absolute top-0.5 left-1 text-[10px] font-bold ${isDark ? 'text-[#ebecd0]' : 'text-[#779556]'} select-none`}>
                         {ranks[rowIndex]}
@@ -538,14 +570,12 @@ const ChessGame: React.FC = () => {
                         </span>
                     )}
 
-                    {/* Move Indicator */}
                     {isPossibleMove && (
                         <div className={`absolute w-3 h-3 sm:w-4 sm:h-4 rounded-full z-10 ${piece ? 'border-4 border-slate-400/50 w-full h-full rounded-none bg-transparent!' : 'bg-black/10'}`} />
                     )}
                     
-                    {/* Check Indicator */}
                     {isCheck && (
-                         <div className="absolute inset-0 bg-red-500/50 rounded-full blur-md z-0 animate-pulse"></div>
+                            <div className="absolute inset-0 bg-red-500/50 rounded-full blur-md z-0 animate-pulse"></div>
                     )}
 
                     {piece && (
@@ -555,7 +585,7 @@ const ChessGame: React.FC = () => {
                     )}
                     </div>
                 );
-              });
+                });
             })}
             </div>
 
@@ -565,52 +595,126 @@ const ChessGame: React.FC = () => {
                 <h2 className="text-3xl font-bold text-white mb-2">{winner}</h2>
                 <div className="text-slate-400 mb-6">Trò chơi kết thúc</div>
                 <button
-                    onClick={resetGame}
+                    onClick={handleResetOrRematch}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition flex items-center mx-auto gap-2 font-bold shadow-lg shadow-indigo-500/30"
                 >
-                    <RefreshCw size={20} /> Chơi lại
+                    <RefreshCw size={20} /> {gameMode === 'online' ? 'Tái đấu' : 'Chơi lại'}
                 </button>
                 </div>
             </div>
             )}
-          </div>
+        </div>
+      </div>
+      
+      {/* Sidebar / Info Column */}
+      <div className="w-full max-w-[500px] flex flex-col gap-4 h-full">
           
-          {/* Sidebar / History */}
-          <div className="w-full max-w-[500px] flex flex-col gap-4 h-[550px]">
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 grow overflow-hidden flex flex-col shadow-lg">
-                  <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
-                      <RotateCcw size={18} /> Lịch sử nước đi
-                  </h3>
-                  <div className="overflow-y-auto grow space-y-1 pr-2 custom-scrollbar">
-                      {history.length === 0 && (
-                          <div className="text-slate-500 text-center italic py-4">Chưa có nước đi nào</div>
-                      )}
-                      {Array.from({ length: Math.ceil(history.length / 2) }).map((_, i) => (
-                          <div key={i} className="flex text-sm">
-                              <div className="w-8 text-slate-500 py-1">{i + 1}.</div>
-                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2 mr-2">{history[2 * i]}</div>
-                              <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2">{history[2 * i + 1]}</div>
-                          </div>
-                      ))}
+          {/* Instructions */}
+          <div className="bg-slate-900/80 p-4 rounded-2xl shadow-lg border border-slate-800 backdrop-blur-md">
+            <div className="flex items-center gap-2 mb-2 text-indigo-400">
+                <BookOpen className="w-5 h-5" />
+                <h2 className="text-lg font-bold">Hướng dẫn</h2>
+            </div>
+            <ul className="space-y-2 text-slate-400 text-sm">
+                <li className="flex gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></span>
+                <span>Trắng đi trước, Đen đi sau.</span>
+                </li>
+                <li className="flex gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></span>
+                <span>Chọn quân cờ để xem các nước đi hợp lệ (chấm xanh).</span>
+                </li>
+            </ul>
+          </div>
+
+          {/* Tips */}
+          <div className="bg-linear-to-br from-indigo-900/20 to-violet-900/20 p-4 rounded-2xl border border-indigo-500/20">
+            <div className="flex items-center gap-2 mb-2 text-indigo-300">
+                <Info className="w-5 h-5" />
+                <h3 className="font-bold">Mẹo chơi</h3>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed">
+                Kiểm soát khu vực trung tâm bàn cờ là chìa khóa để chiến thắng. Hãy phát triển các quân Mã và Tượng sớm!
+            </p>
+          </div>
+
+          {/* Captured Pieces */}
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-lg">
+              <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
+                  <Swords size={18} /> Quân đã ăn
+              </h3>
+              <div className="space-y-3">
+                  {/* Captured by White (Black pieces lost) */}
+                  <div className="flex items-center gap-2 bg-slate-900/50 p-2 rounded-lg">
+                      <span className="text-xs text-slate-500 font-bold uppercase w-12">Trắng ăn</span>
+                      <div className="flex flex-wrap gap-1">
+                          {whiteCaptured.length > 0 ? whiteCaptured.map((p, i) => (
+                              <div key={i} className="w-6 h-6"><Piece type={p} color="b" /></div>
+                          )) : <span className="text-xs text-slate-600 italic">Chưa ăn quân nào</span>}
+                      </div>
+                  </div>
+                  {/* Captured by Black (White pieces lost) */}
+                  <div className="flex items-center gap-2 bg-slate-900/50 p-2 rounded-lg">
+                      <span className="text-xs text-slate-500 font-bold uppercase w-12">Đen ăn</span>
+                      <div className="flex flex-wrap gap-1">
+                          {blackCaptured.length > 0 ? blackCaptured.map((p, i) => (
+                              <div key={i} className="w-6 h-6"><Piece type={p} color="w" /></div>
+                          )) : <span className="text-xs text-slate-600 italic">Chưa ăn quân nào</span>}
+                      </div>
                   </div>
               </div>
-              
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-lg">
-                   <div className="flex gap-2">
-                       <button onClick={resetGame} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition flex justify-center items-center gap-2">
-                           <RefreshCw size={18} /> Ván mới
-                       </button>
-                       {gameMode !== 'online' && (
-                           <button 
-                               onClick={undoMove} 
-                               disabled={history.length === 0 || !!winner || (gameMode === 'pvc' && isAiThinking)}
-                               className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition flex justify-center items-center gap-2"
-                            >
-                               <RotateCcw size={18} /> Đi lại
-                           </button>
-                       )}
-                   </div>
+          </div>
+
+          {/* History */}
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 grow overflow-hidden flex flex-col shadow-lg min-h-[200px]">
+              <h3 className="text-slate-200 font-bold mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
+                  <RotateCcw size={18} /> Lịch sử nước đi
+              </h3>
+              <div className="overflow-y-auto grow space-y-1 pr-2 custom-scrollbar max-h-[200px]">
+                  {history.length === 0 && (
+                      <div className="text-slate-500 text-center italic py-4">Chưa có nước đi nào</div>
+                  )}
+                  {Array.from({ length: Math.ceil(history.length / 2) }).map((_, i) => (
+                      <div key={i} className="flex text-sm">
+                          <div className="w-8 text-slate-500 py-1">{i + 1}.</div>
+                          <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2 mr-2">{history[2 * i]}</div>
+                          <div className="w-16 py-1 font-mono text-slate-300 bg-slate-700/50 rounded px-2">{history[2 * i + 1]}</div>
+                      </div>
+                  ))}
               </div>
+          </div>
+          
+          {/* Controls */}
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-lg">
+                {gameMode === 'online' && rematchState !== 'none' && (
+                    <div className="mb-3 p-3 bg-indigo-500/20 border border-indigo-500/50 rounded-lg text-center animate-pulse">
+                        {rematchState === 'sent' ? (
+                            <span className="text-indigo-300 font-bold">Đang chờ đối thủ đồng ý...</span>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                <span className="text-indigo-300 font-bold">Đối thủ muốn tái đấu!</span>
+                                <button onClick={acceptRematch} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold">
+                                    Đồng ý
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+               <div className="flex gap-2">
+                   <button onClick={handleResetOrRematch} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition flex justify-center items-center gap-2">
+                       <RefreshCw size={18} /> {gameMode === 'online' ? 'Ván mới (Tái đấu)' : 'Ván mới'}
+                   </button>
+                   {gameMode !== 'online' && (
+                       <button 
+                           onClick={undoMove} 
+                           disabled={history.length === 0 || !!winner || (gameMode === 'pvc' && isAiThinking)}
+                           className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition flex justify-center items-center gap-2"
+                        >
+                           <RotateCcw size={18} /> Đi lại
+                       </button>
+                   )}
+               </div>
           </div>
       </div>
     </div>
