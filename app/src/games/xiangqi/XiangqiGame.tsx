@@ -221,6 +221,7 @@ const XiangqiGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    startNewGame('online');
     connector.connect(remoteId);
     setMyColor('b');
     setShowSetup(false);
@@ -374,7 +375,7 @@ const XiangqiGame: React.FC = () => {
                       className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
                     />
                     <button
-                      onClick={() => { startNewGame('online'); joinOnlineRoom(); }}
+                      onClick={() => { joinOnlineRoom(); }}
                       className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
                     >
                       Vào phòng

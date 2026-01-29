@@ -260,6 +260,7 @@ const ChessGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    startNewGame('online');
     connector.connect(remoteId);
     // Connection handling is done in onConnectionOpen
     setMyColor('b');
@@ -353,7 +354,7 @@ const ChessGame: React.FC = () => {
                       className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
                     />
                     <button
-                      onClick={() => { startNewGame('online'); joinOnlineRoom(); }}
+                      onClick={() => { joinOnlineRoom(); }}
                       className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
                     >
                       Vào phòng
@@ -406,8 +407,13 @@ const ChessGame: React.FC = () => {
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
             <div className="relative grid grid-cols-8 border-[12px] border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-800">
-            {board.map((row, rowIndex) =>
-                row.map((piece, colIndex) => {
+            {Array.from({ length: 8 }).map((_, rIndex) => {
+              const rowIndex = myColor === 'b' ? 7 - rIndex : rIndex;
+              const row = board[rowIndex];
+              return Array.from({ length: 8 }).map((_, cIndex) => {
+                const colIndex = myColor === 'b' ? 7 - cIndex : cIndex;
+                const piece = row[colIndex];
+                
                 const isDark = (rowIndex + colIndex) % 2 === 1;
                 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
                 const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
@@ -431,12 +437,12 @@ const ChessGame: React.FC = () => {
                     onClick={() => handleSquareClick(rowIndex, colIndex)}
                     >
                     {/* Coordinates */}
-                    {colIndex === 0 && (
+                    {cIndex === 0 && (
                         <span className={`absolute top-0.5 left-1 text-[10px] font-bold ${isDark ? 'text-[#ebecd0]' : 'text-[#779556]'} select-none`}>
                         {ranks[rowIndex]}
                         </span>
                     )}
-                    {rowIndex === 7 && (
+                    {rIndex === 7 && (
                         <span className={`absolute bottom-0 right-1 text-[10px] font-bold ${isDark ? 'text-[#ebecd0]' : 'text-[#779556]'} select-none`}>
                         {files[colIndex]}
                         </span>
@@ -453,14 +459,14 @@ const ChessGame: React.FC = () => {
                     )}
 
                     {piece && (
-                        <div className="relative z-10 w-full h-full p-0.5">
+                        <div className={`relative z-10 w-full h-full p-0.5 transform ${myColor === 'b' ? '' : ''}`}>
                             <Piece type={piece.type} color={piece.color} />
                         </div>
                     )}
                     </div>
                 );
-                })
-            )}
+              });
+            })}
             </div>
 
             {winner && (
