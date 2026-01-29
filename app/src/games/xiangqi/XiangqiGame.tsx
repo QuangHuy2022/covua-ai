@@ -233,10 +233,15 @@ const XiangqiGame: React.FC = () => {
         setMyId(id);
     }).catch((err) => console.error(err));
     setMyColor('r');
+    setShowSetup(false);
   };
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    if (!/^\d{6}$/.test(remoteId)) {
+      alert("Mã phòng phải gồm 6 chữ số!");
+      return;
+    }
     if (remoteId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
@@ -569,6 +574,22 @@ const XiangqiGame: React.FC = () => {
           Ván mới
         </button>
       </div>
+
+      {gameMode === 'online' && myId && (
+        <div className="mt-3 p-3 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-between w-full max-w-md">
+          <div>
+            <div className="text-slate-300 text-sm">ID Phòng</div>
+            <div className="text-cyan-300 font-mono text-lg font-bold tracking-wider">{myId}</div>
+          </div>
+          <button
+            onClick={handleCopyId}
+            className="p-2 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-white transition-colors"
+            title="Sao chép ID"
+          >
+            {copied ? <Check size={18} className="text-emerald-400" /> : <Copy size={18} />}
+          </button>
+        </div>
+      )}
 
       {winner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">

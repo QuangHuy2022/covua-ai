@@ -67,8 +67,7 @@ const GoGame: React.FC = () => {
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
-      if (myColorRef.current === 'w') { 
-          // Guest sends start
+      if (myColorRef.current === 'b') { 
           connector.send({ type: 'start' });
       }
     });
@@ -220,18 +219,23 @@ const GoGame: React.FC = () => {
     connector.create().then((id) => {
         setMyId(id);
     }).catch((err) => console.error(err));
-    setMyColor('b');
+    setMyColor('w');
+    setShowSetup(false);
   };
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    if (!/^\d{6}$/.test(remoteId)) {
+      alert("Mã phòng phải gồm 6 chữ số!");
+      return;
+    }
     if (remoteId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
     startNewGame('online');
     connector.connect(remoteId);
-    setMyColor('w');
+    setMyColor('b');
     setShowSetup(false);
   };
 
@@ -509,6 +513,22 @@ const GoGame: React.FC = () => {
             Ván mới
           </button>
       </div>
+
+      {gameMode === 'online' && myId && (
+        <div className="mt-3 p-3 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-between w-full max-w-md">
+          <div>
+            <div className="text-slate-300 text-sm">ID Phòng</div>
+            <div className="text-cyan-300 font-mono text-lg font-bold tracking-wider">{myId}</div>
+          </div>
+          <button
+            onClick={handleCopyId}
+            className="p-2 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-white transition-colors"
+            title="Sao chép ID"
+          >
+            {copied ? <Check size={18} className="text-emerald-400" /> : <Copy size={18} />}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
