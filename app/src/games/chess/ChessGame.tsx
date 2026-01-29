@@ -175,9 +175,11 @@ const ChessGame: React.FC = () => {
         const timer = setTimeout(() => {
             const bestMove = getBestMove(game, aiDifficulty);
             if (bestMove) {
-                game.move(bestMove);
-                setLastMove({ from: bestMove.from, to: bestMove.to });
-                updateGameState();
+                const moveResult = game.move(bestMove);
+                if (moveResult) {
+                    setLastMove({ from: moveResult.from, to: moveResult.to });
+                    updateGameState();
+                }
             }
             setIsAiThinking(false);
         }, 500);
@@ -545,7 +547,7 @@ const ChessGame: React.FC = () => {
                        {gameMode !== 'online' && (
                            <button 
                                onClick={undoMove} 
-                               disabled={history.length === 0 || winner || (gameMode === 'pvc' && isAiThinking)}
+                               disabled={history.length === 0 || !!winner || (gameMode === 'pvc' && isAiThinking)}
                                className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition flex justify-center items-center gap-2"
                             >
                                <RotateCcw size={18} /> Đi lại
