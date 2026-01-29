@@ -98,6 +98,10 @@ const GoGame: React.FC = () => {
             }
         } else if (payload?.type === 'pass') {
             passTurn(false);
+            if (payload.nextTurn) {
+                setTurn(payload.nextTurn);
+                turnRef.current = payload.nextTurn;
+            }
         } else if (payload?.type === 'start') {
             setConnected(true);
             setGameMode('online');
@@ -238,9 +242,9 @@ const GoGame: React.FC = () => {
     startNewGame('online');
     connector.create().then((id) => {
         setMyId(id);
+        setMyColor('w');
+        setShowSetup(false);
     }).catch((err: unknown) => console.error(err));
-    setMyColor('w');
-    setShowSetup(false);
   };
 
   const joinOnlineRoom = () => {

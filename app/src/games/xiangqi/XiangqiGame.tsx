@@ -167,7 +167,7 @@ const XiangqiGame: React.FC = () => {
     setBoard(newBoard);
 
     if (sendToPeer && gameMode === 'online') {
-        connector.send({ type: 'move', move });
+        // Sent in setTurn callback to ensure nextTurn is correct
     }
 
     // Check win (capture king)
@@ -176,11 +176,18 @@ const XiangqiGame: React.FC = () => {
         setWinner(currentTurn === 'r' ? 'Đỏ thắng!' : 'Đen thắng!');
     } else {
         // Ensure turn switches correctly
+        let nextTurn: PieceColor = 'r';
         setTurn(prev => {
             const next = prev === 'r' ? 'b' : 'r';
+            nextTurn = next;
             turnRef.current = next; // Update ref immediately for safety
             return next;
         });
+        
+        if (sendToPeer && gameMode === 'online') {
+            // Send nextTurn to ensure sync
+             connector.send({ type: 'move', move, nextTurn: nextTurn });
+        }
     }
 
     setSelectedPos(null);
@@ -247,6 +254,7 @@ const XiangqiGame: React.FC = () => {
         setMyId(id);
     }).catch((err: unknown) => console.error(err));
     setMyColor('r');
+    setShowSetup(false);
   };
 
   const joinOnlineRoom = () => {
@@ -275,22 +283,7 @@ const XiangqiGame: React.FC = () => {
   const undoMove = () => {
     if (moveHistory.length === 0 || winner) return;
 
-    if (gameMode === 'online') {
-       const last = moveHistory[moveHistory.length - 1];
-       const newBoard = board.map(row => [...row]);
-       
-       newBoard[last.from.row][last.from.col] = newBoard[last.to.row][last.to.col];
-       newBoard[last.to.row][last.to.col] = last.captured || null;
-       
-       setBoard(newBoard);
-       setMoveHistory(prev => prev.slice(0, -1));
-       setLastMove(moveHistory.length > 1 ? moveHistory[moveHistory.length - 2] : null);
-       setTurn(prev => prev === 'r' ? 'b' : 'r');
-       setSelectedPos(null);
-       setValidMoves([]);
-       connector.send({ type: 'undo' });
-       return;
-    }
+    if (gameMode === 'online') return; // Disable undo in online mode
     
     // In PvC, undo 2 moves (AI and Player)
     if (gameMode === 'pvc') {
@@ -456,8 +449,18 @@ const XiangqiGame: React.FC = () => {
         <div className="flex flex-col items-center">
             <div className="text-2xl font-black text-slate-700 font-mono">VS</div>
             {gameMode === 'online' && (
-              <div className={`text-xs mt-1 font-bold ${connected ? 'text-emerald-500' : 'text-yellow-500'}`}>
-                {connected ? 'ĐÃ KẾT NỐI' : 'CHỜ KẾT NỐI...'}
+              <div className="flex flex-col items-center">
+                  <div className={`text-xs mt-1 font-bold ${connected ? 'text-emerald-500' : 'text-yellow-500'}`}>
+                    {connected ? 'ĐÃ KẾT NỐI' : 'CHỜ KẾT NỐI...'}
+                  </div>
+                  {myId && !connected && (
+                      <div className="flex items-center gap-2 mt-1 bg-slate-200 px-2 py-1 rounded text-xs font-mono text-slate-700 border border-slate-300">
+                          ID: {myId}
+                          <button onClick={handleCopyId} title="Sao chép">
+                              {copied ? <Check size={12} className="text-emerald-500"/> : <Copy size={12}/>}
+                          </button>
+                      </div>
+                  )}
               </div>
             )}
         </div>
@@ -482,6 +485,25 @@ const XiangqiGame: React.FC = () => {
 
       {/* Main Game Area */}
       <div className="relative p-1 sm:p-2 rounded-xl bg-slate-900 shadow-2xl border border-slate-800">
+        {gameMode === 'online' && !connected && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm rounded-xl">
+                <div className="text-center p-6 bg-slate-800 rounded-xl border border-slate-700 shadow-xl">
+                    <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <h3 className="text-xl font-bold text-white mb-2">Đang chờ đối thủ...</h3>
+                    <div className="flex items-center justify-center gap-3 bg-slate-900 p-3 rounded-lg border border-slate-700">
+                        <span className="text-slate-400 text-sm">Mã phòng:</span>
+                        <span className="text-cyan-400 font-mono font-bold text-xl tracking-wider">{myId}</span>
+                        <button 
+                            onClick={handleCopyId}
+                            className="p-1.5 hover:bg-slate-700 rounded-md text-slate-400 hover:text-white transition-colors"
+                        >
+                            {copied ? <Check size={16} className="text-emerald-500"/> : <Copy size={16}/>}
+                        </button>
+                    </div>
+                    <p className="text-slate-500 text-sm mt-4">Chia sẻ mã này cho bạn bè để bắt đầu</p>
+                </div>
+            </div>
+        )}
         {/* Board Background & Grid */}
         <div className="relative bg-[#1e293b] p-8 rounded border border-slate-700 shadow-inner select-none">
             

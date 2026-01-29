@@ -502,8 +502,18 @@ const ChessGame: React.FC = () => {
                 <div className="text-2xl font-black text-slate-200">VS</div>
                 <div className="text-xs text-slate-500 font-mono mt-1">TURN {Math.floor(history.length / 2) + 1}</div>
                 {gameMode === 'online' && (
-                <div className={`text-xs mt-1 ${connected ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                    {connected ? 'Đã kết nối' : 'Đang chờ kết nối'}
+                <div className="flex flex-col items-center">
+                    <div className={`text-xs mt-1 ${connected ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                        {connected ? 'Đã kết nối' : 'Đang chờ kết nối'}
+                    </div>
+                    {myId && !connected && (
+                        <div className="flex items-center gap-2 mt-1 bg-slate-700 px-2 py-1 rounded text-xs font-mono text-slate-300 border border-slate-600">
+                            ID: {myId}
+                            <button onClick={handleCopyId} title="Sao chép">
+                                {copied ? <Check size={12} className="text-emerald-400"/> : <Copy size={12}/>}
+                            </button>
+                        </div>
+                    )}
                 </div>
                 )}
             </div>
