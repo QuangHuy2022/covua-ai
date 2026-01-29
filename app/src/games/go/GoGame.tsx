@@ -41,12 +41,16 @@ const GoGame: React.FC = () => {
   const historyRef = React.useRef(history);
   const myColorRef = React.useRef(myColor);
   const gameModeRef = React.useRef(gameMode);
+  const capturedBlackRef = React.useRef(capturedBlack);
+  const capturedWhiteRef = React.useRef(capturedWhite);
 
   useEffect(() => { boardRef.current = board; }, [board]);
   useEffect(() => { turnRef.current = turn; }, [turn]);
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { myColorRef.current = myColor; }, [myColor]);
   useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
+  useEffect(() => { capturedBlackRef.current = capturedBlack; }, [capturedBlack]);
+  useEffect(() => { capturedWhiteRef.current = capturedWhite; }, [capturedWhite]);
 
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();
