@@ -487,7 +487,7 @@ const ChessGame: React.FC = () => {
 
       <div className="flex flex-col lg:flex-row gap-8 w-full items-start justify-center">
           {/* Chessboard */}
-          <div className="relative group">
+          <div className="relative group shrink-0">
             <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
             <div className="relative grid grid-cols-8 border-[12px] border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-800">
             {Array.from({ length: 8 }).map((_, rIndex) => {
@@ -569,7 +569,7 @@ const ChessGame: React.FC = () => {
           </div>
 
           {/* Sidebar / History */}
-          <div className="w-full max-w-[680px] flex flex-col gap-4">
+          <div className="w-full max-w-[500px] flex flex-col gap-4">
               <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-48 flex flex-col shadow-lg">
                   <h3 className="text-slate-200 font-bold mb-2 flex items-center gap-2 border-b border-slate-700 pb-2">
                       <RotateCcw size={18} /> Lịch sử nước đi
