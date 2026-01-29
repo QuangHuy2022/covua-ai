@@ -35,6 +35,19 @@ const GoGame: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Refs for stable access in callbacks
+  const boardRef = React.useRef(board);
+  const turnRef = React.useRef(turn);
+  const historyRef = React.useRef(history);
+  const myColorRef = React.useRef(myColor);
+  const gameModeRef = React.useRef(gameMode);
+
+  useEffect(() => { boardRef.current = board; }, [board]);
+  useEffect(() => { turnRef.current = turn; }, [turn]);
+  useEffect(() => { historyRef.current = history; }, [history]);
+  useEffect(() => { myColorRef.current = myColor; }, [myColor]);
+  useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
+
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (myId) {
@@ -54,12 +67,8 @@ const GoGame: React.FC = () => {
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
-      if (myColor === 'w') { // Only guest (White in Go usually Second? Actually usually Black starts. Guest joins as White?)
-          // If Guest joins, they play White?
-          // Chess: Host (White), Guest (Black).
-          // Go: Black plays first.
-          // Let's stick to Host = Black (First), Guest = White (Second).
-          // So Guest sends 'start'.
+      if (myColorRef.current === 'w') { 
+          // Guest sends start
           connector.send({ type: 'start' });
       }
     });
@@ -67,24 +76,12 @@ const GoGame: React.FC = () => {
     connector.onData((payload: any) => {
         if (payload?.type === 'move') {
             const { r, c } = payload.move;
-            // We need to validate and execute the move on our board
-            // But we don't have direct access to 'prevBoard' in the callback scope if we don't depend on history.
-            // But executeMove needs newBoard.
-            // We should use 'tryMakeMove' logic here.
+            const currentBoard = boardRef.current;
+            const currentTurn = turnRef.current;
+            const currentHistory = historyRef.current;
             
-            // Wait, we need the latest 'board' and 'history' to validate.
-            // If we depend on them in useEffect, we might have stale closure issues if updates happen fast?
-            // Actually React state updates are batched.
-            
-            // Let's rely on functional updates or Refs if needed, but adding dependencies is standard.
-            
-            const currentHistory = history; // This might be stale if not in dependency array
-            // But we can't easily access latest history in a callback without adding it to dependency.
-            // Adding history to dependency array re-attaches listener.
-            
-            // Re-calculating move:
             const prevBoard = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1].board : undefined;
-            const result = tryMakeMove(board, r, c, turn, prevBoard);
+            const result = tryMakeMove(currentBoard, r, c, currentTurn, prevBoard);
             
             if (result.success && result.newBoard) {
                 executeMove(result.newBoard, result.captured, {r, c}, false);
@@ -93,10 +90,21 @@ const GoGame: React.FC = () => {
             passTurn(false);
         } else if (payload?.type === 'start') {
             setConnected(true);
+            setGameMode('online');
             setShowSetup(false);
+        } else if (payload?.type === 'undo') {
+            if (historyRef.current.length > 0) {
+                const lastState = historyRef.current[historyRef.current.length - 1];
+                setBoard(lastState.board);
+                setTurn(lastState.turn);
+                setCapturedBlack(lastState.capturedBlack);
+                setCapturedWhite(lastState.capturedWhite);
+                setHistory(prev => prev.slice(0, -1));
+                setLastMove(null);
+            }
         }
     });
-  }, [connector, board, history, turn, myColor]); // Add dependencies
+  }, [connector]); // Only run once on mount (or when connector changes)
 
   // AI Turn Effect
   useEffect(() => {
@@ -208,6 +216,7 @@ const GoGame: React.FC = () => {
   };
 
   const createOnlineRoom = () => {
+    startNewGame('online');
     connector.create().then((id) => {
         setMyId(id);
     }).catch((err) => console.error(err));
@@ -216,6 +225,10 @@ const GoGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    if (remoteId === connector.id) {
+      alert("Không thể tự kết nối với chính mình!");
+      return;
+    }
     startNewGame('online');
     connector.connect(remoteId);
     setMyColor('w');
@@ -229,6 +242,18 @@ const GoGame: React.FC = () => {
   const undoMove = () => {
     if (history.length === 0 || gameOver) return;
     
+    if (gameMode === 'online') {
+        const lastState = history[history.length - 1];
+        setBoard(lastState.board);
+        setTurn(lastState.turn);
+        setCapturedBlack(lastState.capturedBlack);
+        setCapturedWhite(lastState.capturedWhite);
+        setHistory(prev => prev.slice(0, -1));
+        setLastMove(null);
+        connector.send({ type: 'undo' });
+        return;
+    }
+
     if (gameMode === 'pvc') {
         if (isAiThinking) return;
         if (history.length < 2) return;
@@ -403,8 +428,13 @@ const GoGame: React.FC = () => {
                 width: 'fit-content',
                 gap: 0
             }}>
-            {board.map((row, r) => (
-                row.map((stone, c) => (
+            {Array.from({ length: BOARD_SIZE }).map((_, rIndex) => {
+                const r = myColor === 'w' ? BOARD_SIZE - 1 - rIndex : rIndex;
+                const row = board[r];
+                return Array.from({ length: BOARD_SIZE }).map((_, cIndex) => {
+                const c = myColor === 'w' ? BOARD_SIZE - 1 - cIndex : cIndex;
+                const stone = row[c];
+                return (
                 <div 
                     key={`${r}-${c}`}
                     className="w-7 h-7 sm:w-10 sm:h-10 relative flex items-center justify-center cursor-pointer"
@@ -446,8 +476,9 @@ const GoGame: React.FC = () => {
                         </div>
                     )}
                 </div>
-                ))
-            ))}
+                );
+                });
+            })}
             </div>
         </div>
       </div>

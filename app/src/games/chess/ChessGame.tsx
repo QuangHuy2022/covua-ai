@@ -97,6 +97,29 @@ const ChessGame: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Refs for stable access in callbacks
+  const gameRef = React.useRef(game);
+  const myColorRef = React.useRef(myColor);
+  const gameModeRef = React.useRef(gameMode);
+
+  useEffect(() => { gameRef.current = game; }, [game]);
+  useEffect(() => { myColorRef.current = myColor; }, [myColor]);
+  useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
+
+  const updateGameState = () => {
+    setBoard(game.board());
+    setHistory(game.history());
+    if (game.isGameOver()) {
+        if (game.isCheckmate()) {
+            setWinner(game.turn() === 'w' ? 'b' : 'w');
+        } else {
+            setWinner('draw');
+        }
+    } else {
+        setWinner(null);
+    }
+  };
+
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (myId) {
@@ -118,7 +141,7 @@ const ChessGame: React.FC = () => {
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
-      if (myColor === 'b') { // Only guest sends start
+      if (myColorRef.current === 'b') { // Only guest sends start
           connector.send({ type: 'start' });
       }
     });
@@ -126,7 +149,8 @@ const ChessGame: React.FC = () => {
     connector.onData((payload: any) => {
       if (payload?.type === 'move') {
         try {
-          const moveResult = game.move(payload.move);
+          const currentGame = gameRef.current;
+          const moveResult = currentGame.move(payload.move);
           if (moveResult) {
             setLastMove({ from: moveResult.from, to: moveResult.to });
             updateGameState();
@@ -134,48 +158,32 @@ const ChessGame: React.FC = () => {
         } catch {}
       } else if (payload?.type === 'start') {
         setConnected(true);
+        setGameMode('online');
         setShowSetup(false);
+      } else if (payload?.type === 'undo') {
+        const currentGame = gameRef.current;
+        currentGame.undo();
+        updateGameState();
+        setLastMove(null);
       }
     });
-  }, [connector, game, myColor]);
-
+  }, [connector]);
   // AI Turn Effect
   useEffect(() => {
-    if (gameMode === 'pvc' && game.turn() === 'b' && !game.isGameOver() && !winner && !showSetup) {
+    if (gameMode === 'pvc' && game.turn() === 'b' && !game.isGameOver() && !showSetup) {
         setIsAiThinking(true);
-        // Small delay for natural feel
         const timer = setTimeout(() => {
             const bestMove = getBestMove(game, aiDifficulty);
             if (bestMove) {
-                try {
-                    const moveResult = game.move(bestMove);
-                    if (moveResult) {
-                        setLastMove({ from: moveResult.from, to: moveResult.to });
-                        updateGameState();
-                    }
-                } catch (e) {
-                    console.error("AI Error:", e);
-                }
+                game.move(bestMove);
+                setLastMove({ from: bestMove.from, to: bestMove.to });
+                updateGameState();
             }
             setIsAiThinking(false);
         }, 500);
         return () => clearTimeout(timer);
     }
-  }, [game.fen(), gameMode, aiDifficulty, showSetup, winner]); // Depend on FEN to trigger on move
-
-  const updateGameState = () => {
-    setBoard(game.board());
-    setHistory(game.history());
-    if (game.isGameOver()) {
-      if (game.isCheckmate()) {
-        setWinner(game.turn() === 'w' ? 'Đen thắng!' : 'Trắng thắng!');
-      } else if (game.isDraw()) {
-        setWinner('Hòa!');
-      } else {
-        setWinner('Kết thúc!');
-      }
-    }
-  };
+  }, [game, gameMode, aiDifficulty, showSetup]);
 
   const handleSquareClick = (rowIndex: number, colIndex: number) => {
     if (game.isGameOver() || showSetup || (gameMode === 'pvc' && game.turn() === 'b')) return;
@@ -243,28 +251,52 @@ const ChessGame: React.FC = () => {
       setShowSetup(mode === 'online');
   };
 
-  const resetGame = () => {
-    setShowSetup(true);
-  };
-
   const createOnlineRoom = () => {
-    connector.create();
-    const timer = setInterval(() => {
-      if (connector.id) {
-        setMyId(connector.id);
-        clearInterval(timer);
-      }
-    }, 200);
+    startNewGame('online');
+    connector.create().then((id) => {
+        setMyId(id);
+    }).catch((err) => console.error(err));
     setMyColor('w');
   };
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    if (remoteId === connector.id) {
+      alert("Không thể tự kết nối với chính mình!");
+      return;
+    }
     startNewGame('online');
     connector.connect(remoteId);
-    // Connection handling is done in onConnectionOpen
     setMyColor('b');
     setShowSetup(false);
+  };
+
+  const resetGame = () => {
+    setShowSetup(true);
+  };
+
+  const undoMove = () => {
+    if (game.history().length === 0 || winner) return;
+
+    if (gameMode === 'online') {
+         game.undo();
+         updateGameState();
+         setLastMove(null);
+         connector.send({ type: 'undo' });
+         return;
+    }
+    
+    if (gameMode === 'pvc') {
+        if (isAiThinking) return;
+        game.undo(); // Undo AI
+        game.undo(); // Undo Player
+        updateGameState();
+        setLastMove(null);
+    } else {
+        game.undo();
+        updateGameState();
+        setLastMove(null);
+    }
   };
 
   return (
@@ -510,7 +542,15 @@ const ChessGame: React.FC = () => {
                        <button onClick={resetGame} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition flex justify-center items-center gap-2">
                            <RefreshCw size={18} /> Ván mới
                        </button>
-                       {/* Undo button could be added here */}
+                       {gameMode !== 'online' && (
+                           <button 
+                               onClick={undoMove} 
+                               disabled={history.length === 0 || winner || (gameMode === 'pvc' && isAiThinking)}
+                               className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition flex justify-center items-center gap-2"
+                            >
+                               <RotateCcw size={18} /> Đi lại
+                           </button>
+                       )}
                    </div>
               </div>
           </div>

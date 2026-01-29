@@ -49,6 +49,19 @@ const XiangqiGame: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Refs for stable access in callbacks
+  const boardRef = React.useRef(board);
+  const turnRef = React.useRef(turn);
+  const moveHistoryRef = React.useRef(moveHistory);
+  const myColorRef = React.useRef(myColor);
+  const gameModeRef = React.useRef(gameMode);
+
+  useEffect(() => { boardRef.current = board; }, [board]);
+  useEffect(() => { turnRef.current = turn; }, [turn]);
+  useEffect(() => { moveHistoryRef.current = moveHistory; }, [moveHistory]);
+  useEffect(() => { myColorRef.current = myColor; }, [myColor]);
+  useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
+
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (myId) {
@@ -68,7 +81,7 @@ const XiangqiGame: React.FC = () => {
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
-      if (myColor === 'b') { // Only guest sends start
+      if (myColorRef.current === 'b') { // Only guest sends start
           connector.send({ type: 'start' });
       }
     });
@@ -76,24 +89,10 @@ const XiangqiGame: React.FC = () => {
     connector.onData((payload: any) => {
       if (payload?.type === 'move') {
         try {
-          // payload.move has from, to, captured (but captured might be stale or just type info)
-          // We rely on executeMove to update board
           const move = payload.move;
-          // We need to pass the move to executeMove, but executeMove checks valid moves? 
-          // Actually executeMove just updates state. Logic checks were done before calling it.
-          // However, we need to make sure we update the board correctly.
-          // The remote move should be trusted or we can re-validate.
-          // For simplicity, let's trust it for now but we need to ensure 'captured' is correct from our board state?
-          // Actually executeMove calculates captured piece from current board if not provided?
-          // Looking at executeMove: 
-          // const movingPiece = newBoard[move.from.row][move.from.col];
-          // newBoard[move.to.row][move.to.col] = movingPiece;
-          // It doesn't use move.captured for logic, only for history/win check.
-          // Wait: if (move.captured?.type === 'k') ...
-          // So we should re-evaluate captured based on our local board state before calling executeMove
-          // to ensure consistency.
-          
-          const capturedPiece = board[move.to.row][move.to.col];
+          const currentBoard = boardRef.current;
+          // We need to re-evaluate captured based on our local board state to ensure consistency
+          const capturedPiece = currentBoard[move.to.row][move.to.col];
           const localMove: Move = {
               from: move.from,
               to: move.to,
@@ -103,10 +102,26 @@ const XiangqiGame: React.FC = () => {
         } catch {}
       } else if (payload?.type === 'start') {
         setConnected(true);
+        setGameMode('online');
         setShowSetup(false);
+      } else if (payload?.type === 'undo') {
+        if (moveHistoryRef.current.length > 0) {
+           const last = moveHistoryRef.current[moveHistoryRef.current.length - 1];
+           const newBoard = boardRef.current.map(row => [...row]);
+           
+           newBoard[last.from.row][last.from.col] = newBoard[last.to.row][last.to.col];
+           newBoard[last.to.row][last.to.col] = last.captured || null;
+           
+           setBoard(newBoard);
+           setMoveHistory(prev => prev.slice(0, -1));
+           setLastMove(moveHistoryRef.current.length > 1 ? moveHistoryRef.current[moveHistoryRef.current.length - 2] : null);
+           setTurn(prev => prev === 'r' ? 'b' : 'r');
+           setSelectedPos(null);
+           setValidMoves([]);
+        }
       }
     });
-  }, [connector, board, myColor]); // depend on board to correctly calculate captured?
+  }, [connector]);
 
   // AI Turn Effect
   useEffect(() => {
@@ -222,6 +237,10 @@ const XiangqiGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    if (remoteId === connector.id) {
+      alert("Không thể tự kết nối với chính mình!");
+      return;
+    }
     setMyColor('b');
     startNewGame('online');
     connector.connect(remoteId);
@@ -234,6 +253,23 @@ const XiangqiGame: React.FC = () => {
 
   const undoMove = () => {
     if (moveHistory.length === 0 || winner) return;
+
+    if (gameMode === 'online') {
+       const last = moveHistory[moveHistory.length - 1];
+       const newBoard = board.map(row => [...row]);
+       
+       newBoard[last.from.row][last.from.col] = newBoard[last.to.row][last.to.col];
+       newBoard[last.to.row][last.to.col] = last.captured || null;
+       
+       setBoard(newBoard);
+       setMoveHistory(prev => prev.slice(0, -1));
+       setLastMove(moveHistory.length > 1 ? moveHistory[moveHistory.length - 2] : null);
+       setTurn(prev => prev === 'r' ? 'b' : 'r');
+       setSelectedPos(null);
+       setValidMoves([]);
+       connector.send({ type: 'undo' });
+       return;
+    }
     
     // In PvC, undo 2 moves (AI and Player)
     if (gameMode === 'pvc') {
@@ -470,8 +506,12 @@ const XiangqiGame: React.FC = () => {
 
             {/* Pieces Grid */}
             <div className="grid grid-cols-9 gap-0 relative z-10" style={{ width: 'fit-content' }}>
-            {board.map((row, r) => (
-                row.map((piece, c) => {
+            {Array.from({ length: 10 }).map((_, rIndex) => {
+                const r = myColor === 'b' ? 9 - rIndex : rIndex;
+                const row = board[r];
+                return Array.from({ length: 9 }).map((_, cIndex) => {
+                const c = myColor === 'b' ? 8 - cIndex : cIndex;
+                const piece = row[c];
                 const isSelected = selectedPos?.row === r && selectedPos?.col === c;
                 const isValid = validMoves.some(m => m.row === r && m.col === c);
                 const isLastMoveFrom = lastMove?.from.row === r && lastMove?.from.col === c;
@@ -505,8 +545,8 @@ const XiangqiGame: React.FC = () => {
                         )}
                     </div>
                 );
-                })
-            ))}
+                });
+            })}
             </div>
         </div>
       </div>
