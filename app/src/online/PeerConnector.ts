@@ -14,6 +14,16 @@ class PeerConnector {
     return this._id;
   }
 
+  // Generate a random 6-character ID (uppercase alphanumeric)
+  private generateShortId(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
   create(): Promise<string> {
     return new Promise((resolve, reject) => {
         try {
@@ -22,7 +32,13 @@ class PeerConnector {
                 this.peer.destroy();
             }
 
-            this.peer = new Peer();
+            // Generate a custom 6-character ID
+            // Note: There's a small chance of collision, which PeerJS will handle with an 'unavailable-id' error.
+            // For a production app, you might want a retry mechanism.
+            const customId = this.generateShortId();
+            
+            // Use the custom ID
+            this.peer = new Peer(customId);
             
             this.peer.on('open', (id) => {
                 this._id = id;
@@ -33,8 +49,16 @@ class PeerConnector {
                 this.handleConnection(connection);
             });
             
-            this.peer.on('error', (err) => {
+            this.peer.on('error', (err: any) => {
                 console.error('Peer error:', err);
+                
+                // If ID is taken, try again with a new ID (simple retry)
+                if (err.type === 'unavailable-id') {
+                    this.peer?.destroy();
+                    this.create().then(resolve).catch(reject);
+                    return;
+                }
+
                 // Only reject if we haven't resolved yet (not perfect but helpful)
                 if (!this._id) reject(err);
             });

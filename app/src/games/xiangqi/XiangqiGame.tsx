@@ -251,6 +251,13 @@ const XiangqiGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+
+    // Validate ID format (6 alphanumeric characters)
+    if (!/^[A-Z0-9]{6}$/.test(remoteId.toUpperCase())) {
+      alert("Mã phòng phải gồm 6 ký tự (chữ hoặc số)!");
+      return;
+    }
+
     if (remoteId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
