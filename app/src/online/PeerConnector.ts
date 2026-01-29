@@ -84,7 +84,10 @@ class PeerConnector {
         this.peer.on('open', () => {
              this.doConnect(remoteId);
         });
-        this.peer.on('error', (err) => console.error('Peer join error:', err));
+        this.peer.on('error', (err) => {
+            console.error('Peer join error:', err);
+            alert(`Lỗi kết nối: ${err.type === 'peer-unavailable' ? 'Không tìm thấy phòng này' : err.message}`);
+        });
     } else {
         this.doConnect(remoteId);
     }

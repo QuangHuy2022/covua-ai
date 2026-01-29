@@ -138,11 +138,22 @@ const ChessGame: React.FC = () => {
     };
   }, []);
 
+  // Monitor connection errors
+  useEffect(() => {
+      // We need a way to listen to connection errors from PeerConnector
+      // Since PeerConnector doesn't expose on('error') directly, we might need to modify it
+      // But for now, we can rely on connection state.
+  }, []);
+
   useEffect(() => {
     connector.onConnectionOpen(() => {
       setConnected(true);
       if (myColorRef.current === 'b') { // Only guest sends start
           connector.send({ type: 'start' });
+      } else {
+        // Host also needs to know they are connected if the connection was initiated by guest
+        // But usually, receiving 'start' handles this. 
+        // However, if 'start' is missed or delayed, this provides immediate feedback.
       }
     });
 
@@ -150,12 +161,38 @@ const ChessGame: React.FC = () => {
       if (payload?.type === 'move') {
         try {
           const currentGame = gameRef.current;
-          const moveResult = currentGame.move(payload.move);
-          if (moveResult) {
-            setLastMove({ from: moveResult.from, to: moveResult.to });
-            updateGameState();
+          
+          // Force sync if FEN is provided and differs
+          if (payload.fen && payload.fen !== currentGame.fen()) {
+             currentGame.load(payload.fen);
+          } else {
+             currentGame.move(payload.move);
           }
-        } catch {}
+          
+          setBoard([...currentGame.board()]); // Force new array reference
+          setHistory([...currentGame.history()]);
+          setLastMove({ from: payload.move.from, to: payload.move.to });
+          
+          // Update winner/game over status
+          if (currentGame.isGameOver()) {
+              if (currentGame.isCheckmate()) {
+                  setWinner(currentGame.turn() === 'w' ? 'b' : 'w');
+              } else {
+                  setWinner('draw');
+              }
+          } else {
+              setWinner(null);
+          }
+        } catch (e) {
+            console.error("Move sync error:", e);
+            // If move failed, try to recover from FEN if available
+            if (payload.fen) {
+                try {
+                    gameRef.current.load(payload.fen);
+                    updateGameState();
+                } catch {}
+            }
+        }
       } else if (payload?.type === 'start') {
         setConnected(true);
         setGameMode('online');
@@ -211,7 +248,11 @@ const ChessGame: React.FC = () => {
                 setSelectedSquare(null);
                 setPossibleMoves([]);
                 if (gameMode === 'online') {
-                  connector.send({ type: 'move', move: { from: selectedSquare, to: square, promotion: 'q' } });
+                  connector.send({ 
+                      type: 'move', 
+                      move: { from: selectedSquare, to: square, promotion: 'q' },
+                      fen: game.fen() // Send FEN for robust sync
+                  });
                 }
                 return;
             }
@@ -263,6 +304,13 @@ const ChessGame: React.FC = () => {
 
   const joinOnlineRoom = () => {
     if (!remoteId) return;
+    
+    // Validate ID format (6 digits)
+    if (!/^\d{6}$/.test(remoteId)) {
+        alert("Mã phòng phải gồm 6 chữ số!");
+        return;
+    }
+
     if (remoteId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
