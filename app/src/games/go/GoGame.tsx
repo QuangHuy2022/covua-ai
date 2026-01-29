@@ -310,9 +310,9 @@ const GoGame: React.FC = () => {
                 <div className="grid grid-cols-1 gap-2">
                   {!myId ? (
                     <button
-                      onClick={() => { startNewGame('online'); createOnlineRoom(); }}
-                      className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
-                    >
+                onClick={() => { createOnlineRoom(); }}
+                className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
+              >
                       <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
                         <Users size={20} />
                       </div>

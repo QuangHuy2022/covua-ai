@@ -135,6 +135,9 @@ class PeerConnector {
 
   onConnectionOpen(cb: () => void) {
       this.onConnectionOpenCallback = cb;
+      if (this.conn && this.conn.open) {
+          cb();
+      }
   }
 }
 
