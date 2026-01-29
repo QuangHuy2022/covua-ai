@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, RotateCcw, SkipForward, Users, Cpu } from 'lucide-react';
+import { RefreshCw, RotateCcw, SkipForward, Users, Cpu, Copy, Check } from 'lucide-react';
 import { type Stone, type Board, BOARD_SIZE, tryMakeMove } from './GoLogic';
 import { getBestMove, type Difficulty } from './GoAI';
+import PeerConnector from '../../online/PeerConnector';
 
 interface GameState {
     board: Board;
@@ -23,10 +24,79 @@ const GoGame: React.FC = () => {
   const [lastMove, setLastMove] = useState<{r: number, c: number} | null>(null);
 
   // New State for Game Mode
-  const [gameMode, setGameMode] = useState<'pvp' | 'pvc'>('pvc');
+  const [gameMode, setGameMode] = useState<'pvp' | 'pvc' | 'online'>('pvc');
   const [aiDifficulty, setAiDifficulty] = useState<Difficulty>('medium');
   const [showSetup, setShowSetup] = useState(true);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [connector] = useState(new PeerConnector());
+  const [myId, setMyId] = useState<string>('');
+  const [remoteId, setRemoteId] = useState<string>('');
+  const [myColor, setMyColor] = useState<Stone>('b');
+  const [connected, setConnected] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (myId) {
+      navigator.clipboard.writeText(myId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  useEffect(() => {
+    // Cleanup peer connection on unmount
+    return () => {
+      connector.destroy();
+    };
+  }, []);
+
+  useEffect(() => {
+    connector.onConnectionOpen(() => {
+      setConnected(true);
+      if (myColor === 'w') { // Only guest (White in Go usually Second? Actually usually Black starts. Guest joins as White?)
+          // If Guest joins, they play White?
+          // Chess: Host (White), Guest (Black).
+          // Go: Black plays first.
+          // Let's stick to Host = Black (First), Guest = White (Second).
+          // So Guest sends 'start'.
+          connector.send({ type: 'start' });
+      }
+    });
+
+    connector.onData((payload: any) => {
+        if (payload?.type === 'move') {
+            const { r, c } = payload.move;
+            // We need to validate and execute the move on our board
+            // But we don't have direct access to 'prevBoard' in the callback scope if we don't depend on history.
+            // But executeMove needs newBoard.
+            // We should use 'tryMakeMove' logic here.
+            
+            // Wait, we need the latest 'board' and 'history' to validate.
+            // If we depend on them in useEffect, we might have stale closure issues if updates happen fast?
+            // Actually React state updates are batched.
+            
+            // Let's rely on functional updates or Refs if needed, but adding dependencies is standard.
+            
+            const currentHistory = history; // This might be stale if not in dependency array
+            // But we can't easily access latest history in a callback without adding it to dependency.
+            // Adding history to dependency array re-attaches listener.
+            
+            // Re-calculating move:
+            const prevBoard = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1].board : undefined;
+            const result = tryMakeMove(board, r, c, turn, prevBoard);
+            
+            if (result.success && result.newBoard) {
+                executeMove(result.newBoard, result.captured, {r, c}, false);
+            }
+        } else if (payload?.type === 'pass') {
+            passTurn(false);
+        } else if (payload?.type === 'start') {
+            setConnected(true);
+            setShowSetup(false);
+        }
+    });
+  }, [connector, board, history, turn, myColor]); // Add dependencies
 
   // AI Turn Effect
   useEffect(() => {
@@ -56,7 +126,7 @@ const GoGame: React.FC = () => {
     }
   }, [board, turn, gameMode, aiDifficulty, showSetup, gameOver]);
 
-  const executeMove = (newBoard: Board, captured: number, moveLoc: {r: number, c: number}) => {
+  const executeMove = (newBoard: Board, captured: number, moveLoc: {r: number, c: number}, sendToPeer = true) => {
     // Save history
     setHistory(prev => [...prev, {
         board: board.map(row => [...row]),
@@ -77,10 +147,15 @@ const GoGame: React.FC = () => {
         setCapturedBlack(prev => prev + captured);
         setTurn('b');
     }
+
+    if (sendToPeer && gameMode === 'online') {
+        connector.send({ type: 'move', move: moveLoc });
+    }
   };
 
   const handleIntersectionClick = (r: number, c: number) => {
     if (board[r][c] || gameOver || showSetup || (gameMode === 'pvc' && turn === 'w')) return;
+    if (gameMode === 'online' && turn !== myColor) return;
 
     const prevBoard = history.length > 0 ? history[history.length - 1].board : undefined;
     const result = tryMakeMove(board, r, c, turn, prevBoard);
@@ -95,7 +170,7 @@ const GoGame: React.FC = () => {
     }
   };
 
-  const passTurn = () => {
+  const passTurn = (sendToPeer = true) => {
       if (gameOver) return;
 
       // Save history
@@ -110,12 +185,16 @@ const GoGame: React.FC = () => {
       setTurn(turn === 'b' ? 'w' : 'b');
       setLastMove(null);
 
+      if (sendToPeer && gameMode === 'online') {
+          connector.send({ type: 'pass' });
+      }
+
       // Simple game over check logic: 2 passes = game over
       // Here we assume if AI passes, it might be game over if player also passed.
       // But for simplicity, we just toggle turn.
   };
 
-  const startNewGame = (mode: 'pvp' | 'pvc', difficulty?: Difficulty) => {
+  const startNewGame = (mode: 'pvp' | 'pvc' | 'online', difficulty?: Difficulty) => {
     setBoard(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
     setTurn('b');
     setCapturedBlack(0);
@@ -125,6 +204,20 @@ const GoGame: React.FC = () => {
     setLastMove(null);
     setGameMode(mode);
     if (difficulty) setAiDifficulty(difficulty);
+    setShowSetup(mode === 'online');
+  };
+
+  const createOnlineRoom = () => {
+    connector.create().then((id) => {
+        setMyId(id);
+    }).catch((err) => console.error(err));
+    setMyColor('b');
+  };
+
+  const joinOnlineRoom = () => {
+    if (!remoteId) return;
+    connector.connect(remoteId);
+    setMyColor('w');
     setShowSetup(false);
   };
 
@@ -211,33 +304,93 @@ const GoGame: React.FC = () => {
                   </button>
                  ))}
               </div>
+              <div className="space-y-3">
+                <div className="text-left text-slate-400 text-sm font-semibold uppercase tracking-wider ml-1">Chơi Online</div>
+                <div className="grid grid-cols-1 gap-2">
+                  {!myId ? (
+                    <button
+                      onClick={() => { startNewGame('online'); createOnlineRoom(); }}
+                      className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
+                    >
+                      <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
+                        <Users size={20} />
+                      </div>
+                      <div className="text-left flex-grow">
+                        <div className="font-bold text-white">Tạo phòng</div>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="w-full p-3 bg-slate-700 rounded-xl flex items-center gap-4 border border-cyan-500/50 relative overflow-hidden">
+                       <div className="absolute inset-0 bg-cyan-500/10 pointer-events-none"></div>
+                       <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                        <Users size={20} />
+                      </div>
+                      <div className="text-left flex-grow min-w-0">
+                        <div className="font-bold text-white text-sm">ID Phòng của bạn</div>
+                        <div className="text-cyan-300 font-mono text-xl font-bold tracking-wider">{myId}</div>
+                      </div>
+                      <button
+                        onClick={handleCopyId}
+                        className="p-2 hover:bg-slate-600 rounded-lg text-slate-300 hover:text-white transition-colors"
+                        title="Sao chép ID"
+                      >
+                        {copied ? <Check size={20} className="text-emerald-400" /> : <Copy size={20} />}
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      value={remoteId}
+                      onChange={(e) => setRemoteId(e.target.value)}
+                      placeholder="Nhập ID phòng"
+                      className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
+                    />
+                    <button
+                      onClick={() => { startNewGame('online'); joinOnlineRoom(); }}
+                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
+                    >
+                      Vào phòng
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Game Header */}
-      <div className="flex justify-between items-center w-full bg-slate-800/50 p-4 rounded-xl backdrop-blur-sm border border-slate-700/50">
-        <div className={`flex flex-col items-center px-6 py-3 rounded-lg transition-all duration-300 ${turn === 'b' ? 'bg-slate-900/80 text-white border border-slate-600 shadow-[0_0_15px_rgba(255,255,255,0.1)]' : 'text-slate-500'}`}>
-          <div className="flex items-center gap-2 font-bold mb-1">
-            <div className={`w-4 h-4 rounded-full bg-black border border-slate-600 ${turn === 'b' ? 'ring-2 ring-white animate-pulse' : ''}`} />
-            {gameMode === 'pvc' ? 'BẠN (ĐEN)' : 'QUÂN ĐEN'}
-          </div>
-          <span className="text-sm opacity-80">Tù binh: {capturedWhite}</span>
+      {/* Game Info Header */}
+      <div className="flex justify-between items-center w-full bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
+        <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${turn === 'b' ? 'bg-slate-900 text-white ring-2 ring-slate-500' : 'bg-slate-700 text-slate-400'}`}>
+          <div className="w-3 h-3 rounded-full bg-black border border-slate-600"></div>
+          {gameMode === 'pvc' ? 'Bạn (Đen)' : gameMode === 'online' ? (myColor === 'b' ? 'Bạn (Đen)' : 'Đối thủ (Đen)') : 'Đen'}
         </div>
         
-        <div className="text-2xl font-black text-slate-700 font-mono">VS</div>
-        
-        <div className={`flex flex-col items-center px-6 py-3 rounded-lg transition-all duration-300 ${turn === 'w' ? 'bg-slate-100/10 text-white border border-white/20 shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'text-slate-500'}`}>
-          <div className="flex items-center gap-2 font-bold mb-1">
-            {gameMode === 'pvc' && isAiThinking ? (
-                 <span className="animate-pulse">Đang nghĩ...</span>
-            ) : (
-                 <span>{gameMode === 'pvc' ? `MÁY (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})` : 'QUÂN TRẮNG'}</span>
+        <div className="flex flex-col items-center">
+            <div className="text-2xl font-black text-slate-200">VS</div>
+            <div className="text-xs text-slate-500 font-mono mt-1">Tù nhân: {capturedBlack} (Đ) - {capturedWhite} (T)</div>
+            {gameMode === 'online' && (
+              <div className={`text-xs mt-1 font-bold ${connected ? 'text-emerald-500' : 'text-yellow-500'}`}>
+                {connected ? 'ĐÃ KẾT NỐI' : 'CHỜ KẾT NỐI...'}
+              </div>
             )}
-            <div className={`w-4 h-4 rounded-full bg-white ${turn === 'w' ? 'ring-2 ring-white animate-pulse' : ''}`} />
-          </div>
-          <span className="text-sm opacity-80">Tù binh: {capturedBlack}</span>
+        </div>
+
+        <div className={`flex items-center gap-3 px-6 py-3 rounded-lg font-bold transition-all ${turn === 'w' ? 'bg-slate-100 text-slate-900 ring-2 ring-slate-300' : 'bg-slate-700 text-slate-400'}`}>
+          {gameMode === 'pvc' && isAiThinking ? (
+             <div className="flex items-center gap-2">
+                 <span className="animate-pulse">Đang nghĩ...</span>
+             </div>
+          ) : (
+             <span>{
+                gameMode === 'pvc' 
+                  ? `Máy (${aiDifficulty === 'easy' ? 'Dễ' : aiDifficulty === 'medium' ? 'Vừa' : 'Khó'})` 
+                  : gameMode === 'online'
+                    ? (myColor === 'w' ? 'Bạn (Trắng)' : 'Đối thủ (Trắng)')
+                    : 'Trắng'
+             }</span>
+          )}
+          <div className="w-3 h-3 rounded-full bg-white border border-slate-300"></div>
         </div>
       </div>
 
@@ -309,7 +462,7 @@ const GoGame: React.FC = () => {
             Đi lại
           </button>
           <button
-            onClick={passTurn}
+            onClick={() => passTurn()}
             disabled={gameOver || (gameMode === 'pvc' && isAiThinking)}
             className="flex items-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:shadow-orange-500/30"
           >

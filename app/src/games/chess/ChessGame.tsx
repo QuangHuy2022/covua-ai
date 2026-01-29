@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Chess, type Square } from 'chess.js';
-import { RefreshCw, RotateCcw, Cpu, Users } from 'lucide-react';
+import { RefreshCw, RotateCcw, Cpu, Users, Copy, Check } from 'lucide-react';
 import { getBestMove, type Difficulty } from './ChessAI';
 import PeerConnector from '../../online/PeerConnector';
 
@@ -95,12 +95,34 @@ const ChessGame: React.FC = () => {
   const [remoteId, setRemoteId] = useState<string>('');
   const [myColor, setMyColor] = useState<'w' | 'b'>('w');
   const [connected, setConnected] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (myId) {
+      navigator.clipboard.writeText(myId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   useEffect(() => {
     updateGameState();
+    
+    // Cleanup peer connection on unmount
+    return () => {
+      connector.destroy();
+    };
   }, []);
 
   useEffect(() => {
+    connector.onConnectionOpen(() => {
+      setConnected(true);
+      if (myColor === 'b') { // Only guest sends start
+          connector.send({ type: 'start' });
+      }
+    });
+
     connector.onData((payload: any) => {
       if (payload?.type === 'move') {
         try {
@@ -239,9 +261,8 @@ const ChessGame: React.FC = () => {
   const joinOnlineRoom = () => {
     if (!remoteId) return;
     connector.connect(remoteId);
-    connector.send({ type: 'start' });
+    // Connection handling is done in onConnectionOpen
     setMyColor('b');
-    setConnected(true);
     setShowSetup(false);
   };
 
@@ -293,18 +314,37 @@ const ChessGame: React.FC = () => {
               <div className="space-y-3">
                 <div className="text-left text-slate-400 text-sm font-semibold uppercase tracking-wider ml-1">Chơi Online</div>
                 <div className="grid grid-cols-1 gap-2">
-                  <button
-                    onClick={() => { startNewGame('online'); createOnlineRoom(); }}
-                    className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
-                  >
-                    <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
-                      <Users size={20} />
+                  {!myId ? (
+                    <button
+                      onClick={() => { startNewGame('online'); createOnlineRoom(); }}
+                      className="w-full p-3 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center gap-4 transition-all hover:scale-105 border border-slate-600 hover:border-cyan-500 group"
+                    >
+                      <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-white transition-colors">
+                        <Users size={20} />
+                      </div>
+                      <div className="text-left flex-grow">
+                        <div className="font-bold text-white">Tạo phòng</div>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="w-full p-3 bg-slate-700 rounded-xl flex items-center gap-4 border border-cyan-500/50 relative overflow-hidden">
+                       <div className="absolute inset-0 bg-cyan-500/10 pointer-events-none"></div>
+                       <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                        <Users size={20} />
+                      </div>
+                      <div className="text-left flex-grow min-w-0">
+                        <div className="font-bold text-white text-sm">ID Phòng của bạn</div>
+                        <div className="text-cyan-300 font-mono text-xl font-bold tracking-wider">{myId}</div>
+                      </div>
+                      <button
+                        onClick={handleCopyId}
+                        className="p-2 hover:bg-slate-600 rounded-lg text-slate-300 hover:text-white transition-colors"
+                        title="Sao chép ID"
+                      >
+                        {copied ? <Check size={20} className="text-emerald-400" /> : <Copy size={20} />}
+                      </button>
                     </div>
-                    <div className="text-left flex-grow">
-                      <div className="font-bold text-white">Tạo phòng</div>
-                      {myId && <div className="text-slate-400 text-xs mt-1">ID: {myId}</div>}
-                    </div>
-                  </button>
+                  )}
                   <div className="flex gap-2">
                     <input
                       value={remoteId}
