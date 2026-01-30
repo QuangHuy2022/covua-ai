@@ -7,14 +7,35 @@ class PeerConnector {
   private peer: Peer | null = null;
   private conn: DataConnection | null = null;
   private onMessage: DataCallback | null = null;
-  private onOpenCallback: ConnectionCallback | null = null;
+  private onOpenCallbacks = new Set<ConnectionCallback>();
   private _id: string | null = null;
+  private createPromise: Promise<string> | null = null;
 
   get id() {
     return this._id;
   }
 
-  // Generate a random 6-character ID (uppercase alphanumeric)
+  private resetTransport() {
+    if (this.conn) {
+      try {
+        this.conn.close();
+      } catch {
+      }
+      this.conn = null;
+    }
+
+    if (this.peer) {
+      try {
+        this.peer.destroy();
+      } catch {
+      }
+      this.peer = null;
+    }
+
+    this._id = null;
+    this.createPromise = null;
+  }
+
   private generateShortId(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -24,102 +45,140 @@ class PeerConnector {
     return result;
   }
 
-  create(): Promise<string> {
-    return new Promise((resolve, reject) => {
-        try {
-            // Destroy existing peer if any
-            if (this.peer) {
-                this.peer.destroy();
-            }
+  private createPeerWithId(id: string): Promise<string> {
+    this.resetTransport();
+    this.peer = new Peer(id);
 
-            // Generate a custom 6-character ID
-            // Note: There's a small chance of collision, which PeerJS will handle with an 'unavailable-id' error.
-            // For a production app, you might want a retry mechanism.
-            const customId = this.generateShortId();
-            
-            // Use the custom ID
-            this.peer = new Peer(customId);
-            
-            this.peer.on('open', (id) => {
-                this._id = id;
-                resolve(id);
-            });
-            
-            this.peer.on('connection', (connection) => {
-                this.handleConnection(connection);
-            });
-            
-            this.peer.on('error', (err: any) => {
-                console.error('Peer error:', err);
-                
-                // If ID is taken, try again with a new ID (simple retry)
-                if (err.type === 'unavailable-id') {
-                    this.peer?.destroy();
-                    this.create().then(resolve).catch(reject);
-                    return;
-                }
+    return new Promise<string>((resolve, reject) => {
+      if (!this.peer) {
+        reject(new Error('Peer is not initialized'));
+        return;
+      }
 
-                // Only reject if we haven't resolved yet (not perfect but helpful)
-                if (!this._id) reject(err);
-            });
-        } catch (err: unknown) {
-            reject(err);
-        }
+      this.peer.on('open', (peerId) => {
+        this._id = peerId;
+        resolve(peerId);
+      });
+
+      this.peer.on('connection', (connection) => {
+        this.attachConnection(connection);
+      });
+
+      this.peer.on('error', (err) => {
+        reject(err);
+      });
     });
+  }
+
+  async create(): Promise<string> {
+    if (this.createPromise) return this.createPromise;
+
+    this.createPromise = (async () => {
+      const maxAttempts = 10;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const id = this.generateShortId();
+        try {
+          return await this.createPeerWithId(id);
+        } catch (err: unknown) {
+          lastError = err;
+          const errType = (err as { type?: string } | null)?.type;
+          if (errType === 'unavailable-id') continue;
+          throw err;
+        }
+      }
+
+      throw lastError ?? new Error('Unable to create peer');
+    })();
+
+    return this.createPromise;
   }
 
   connect(remoteId: string): Promise<void> {
-      return new Promise((resolve, reject) => {
+    const targetId = remoteId.trim();
+    if (!targetId) return Promise.resolve();
+
+    return new Promise<void>((resolve, reject) => {
+      const run = async () => {
+        try {
           if (!this.peer) {
-             this.peer = new Peer();
-             this.peer.on('open', () => {
-                 this._connect(remoteId, resolve, reject);
-             });
-             this.peer.on('error', (err) => {
-                 console.error('Peer error during connect:', err);
-                 reject(err);
-             });
-          } else {
-              this._connect(remoteId, resolve, reject);
+            this.peer = new Peer();
+
+            await new Promise<void>((openResolve, openReject) => {
+              if (!this.peer) {
+                openReject(new Error('Peer is not initialized'));
+                return;
+              }
+
+              this.peer.on('open', (id) => {
+                this._id = id;
+                openResolve();
+              });
+
+              this.peer.on('connection', (connection) => {
+                this.attachConnection(connection);
+              });
+
+              this.peer.on('error', (err) => {
+                openReject(err);
+              });
+            });
           }
-      });
-  }
 
-  private _connect(remoteId: string, resolve: () => void, reject: (err: any) => void) {
-      if (!this.peer) return;
-      try {
-        const conn = this.peer.connect(remoteId);
-        this.handleConnection(conn);
-        
-        // Wait for connection to open
-        conn.on('open', () => {
+          if (!this.peer) {
+            reject(new Error('Peer is not initialized'));
+            return;
+          }
+
+          const connection = this.peer.connect(targetId);
+          this.attachConnection(connection);
+
+          if (connection.open) {
             resolve();
-        });
-        
-        conn.on('error', (err) => reject(err));
-      } catch (err: unknown) {
+            return;
+          }
+
+          connection.on('open', () => resolve());
+          connection.on('error', (err) => reject(err));
+        } catch (err: unknown) {
           reject(err);
-      }
+        }
+      };
+
+      void run();
+    });
   }
 
-  private handleConnection(connection: DataConnection) {
+  private attachConnection(connection: DataConnection) {
+    if (this.conn && this.conn !== connection) {
+      try {
+        this.conn.close();
+      } catch {
+      }
+    }
+
     this.conn = connection;
-    
-    this.conn.on('open', () => {
-        if (this.onOpenCallback) this.onOpenCallback();
+
+    connection.on('open', () => {
+      this.onOpenCallbacks.forEach((cb) => cb());
     });
-    
-    this.conn.on('data', (data) => {
+
+    connection.on('data', (data) => {
       if (this.onMessage) this.onMessage(data);
     });
-    
-    this.conn.on('close', () => {
-        console.log('Connection closed');
+
+    connection.on('close', () => {
+      if (this.conn === connection) this.conn = null;
     });
-    
-    this.conn.on('error', (err) => {
-        console.error('Connection error:', err);
+
+    connection.on('error', () => {
+      if (this.conn === connection) this.conn = null;
     });
+
+    if (connection.open) {
+      this.onOpenCallbacks.forEach((cb) => cb());
+    }
   }
 
   send(data: unknown) {
@@ -133,25 +192,14 @@ class PeerConnector {
   }
 
   onConnectionOpen(cb: ConnectionCallback) {
-      this.onOpenCallback = cb;
-      // If already connected, trigger immediately
-      if (this.conn && this.conn.open) {
-          cb();
-      }
+    this.onOpenCallbacks.add(cb);
+    if (this.conn?.open) cb();
   }
 
   destroy() {
-      if (this.conn) {
-          this.conn.close();
-          this.conn = null;
-      }
-      if (this.peer) {
-          this.peer.destroy();
-          this.peer = null;
-      }
-      this._id = null;
-      this.onMessage = null;
-      this.onOpenCallback = null;
+    this.onOpenCallbacks.clear();
+    this.onMessage = null;
+    this.resetTransport();
   }
 }
 

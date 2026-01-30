@@ -319,9 +319,10 @@ const ChessGame: React.FC = () => {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
+    setMyColor('b');
+    myColorRef.current = 'b';
     startNewGame('online');
     connector.connect(remoteId);
-    setMyColor('b');
     setShowSetup(false);
   };
 

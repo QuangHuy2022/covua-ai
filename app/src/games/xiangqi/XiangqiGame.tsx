@@ -263,21 +263,17 @@ const XiangqiGame: React.FC = () => {
   };
 
   const joinOnlineRoom = () => {
-    if (!remoteId) return;
+    const targetId = remoteId.trim();
+    if (!targetId) return;
 
-    // Validate ID format (6 alphanumeric characters)
-    if (!/^[A-Z0-9]{6}$/.test(remoteId.toUpperCase())) {
-      alert("Mã phòng phải gồm 6 ký tự (chữ hoặc số)!");
-      return;
-    }
-
-    if (remoteId === connector.id) {
+    if (targetId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
     setMyColor('b');
+    myColorRef.current = 'b';
     startNewGame('online');
-    connector.connect(remoteId);
+    connector.connect(targetId);
     setShowSetup(false);
   };
 

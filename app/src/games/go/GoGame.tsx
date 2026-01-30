@@ -282,21 +282,17 @@ const GoGame: React.FC = () => {
   };
 
   const joinOnlineRoom = () => {
-    if (!remoteId) return;
-    
-    // Validate ID format (6 alphanumeric characters)
-    if (!/^[A-Z0-9]{6}$/.test(remoteId.toUpperCase())) {
-      alert("Mã phòng phải gồm 6 ký tự (chữ hoặc số)!");
-      return;
-    }
+    const targetId = remoteId.trim();
+    if (!targetId) return;
 
-    if (remoteId === connector.id) {
+    if (targetId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
-    startNewGame('online');
-    connector.connect(remoteId);
     setMyColor('b');
+    myColorRef.current = 'b';
+    startNewGame('online');
+    connector.connect(targetId);
     setShowSetup(false);
   };
 
