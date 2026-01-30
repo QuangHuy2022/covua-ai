@@ -79,9 +79,11 @@ class PeerConnector {
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const id = this.generateShortId();
+        console.log(`Attempting to create peer with ID: ${id} (attempt ${attempt + 1})`);
         try {
           return await this.createPeerWithId(id);
         } catch (err: unknown) {
+          console.error('Create peer error:', err);
           lastError = err;
           const errType = (err as { type?: string } | null)?.type;
           if (errType === 'unavailable-id') continue;
@@ -97,12 +99,14 @@ class PeerConnector {
 
   connect(remoteId: string): Promise<void> {
     const targetId = remoteId.trim();
+    console.log(`Connecting to remote peer: ${targetId}`);
     if (!targetId) return Promise.resolve();
 
     return new Promise<void>((resolve, reject) => {
       const run = async () => {
         try {
           if (!this.peer) {
+            console.log('Peer not initialized, creating new peer...');
             this.peer = new Peer();
 
             await new Promise<void>((openResolve, openReject) => {
@@ -112,15 +116,18 @@ class PeerConnector {
               }
 
               this.peer.on('open', (id) => {
+                console.log(`My Peer ID (Guest): ${id}`);
                 this._id = id;
                 openResolve();
               });
 
               this.peer.on('connection', (connection) => {
+                console.log('Incoming connection on Guest peer (unexpected but handled)');
                 this.attachConnection(connection);
               });
 
               this.peer.on('error', (err) => {
+                console.error('Peer error (Guest):', err);
                 openReject(err);
               });
             });
@@ -131,17 +138,26 @@ class PeerConnector {
             return;
           }
 
+          console.log(`Initiating connection to ${targetId}...`);
           const connection = this.peer.connect(targetId);
           this.attachConnection(connection);
 
           if (connection.open) {
+            console.log('Connection opened immediately');
             resolve();
             return;
           }
 
-          connection.on('open', () => resolve());
-          connection.on('error', (err) => reject(err));
+          connection.on('open', () => {
+            console.log('Connection opened via event');
+            resolve();
+          });
+          connection.on('error', (err) => {
+             console.error('Connection error during connect:', err);
+             reject(err);
+          });
         } catch (err: unknown) {
+          console.error('Connect exception:', err);
           reject(err);
         }
       };
@@ -151,8 +167,10 @@ class PeerConnector {
   }
 
   private attachConnection(connection: DataConnection) {
+    console.log('Attaching connection:', connection.peer);
     if (this.conn && this.conn !== connection) {
       try {
+        console.log('Closing existing connection');
         this.conn.close();
       } catch {
       }
@@ -161,22 +179,27 @@ class PeerConnector {
     this.conn = connection;
 
     connection.on('open', () => {
+      console.log('Connection opened:', connection.peer);
       this.onOpenCallbacks.forEach((cb) => cb());
     });
 
     connection.on('data', (data) => {
+      console.log('Received data:', data);
       if (this.onMessage) this.onMessage(data);
     });
 
     connection.on('close', () => {
+      console.log('Connection closed');
       if (this.conn === connection) this.conn = null;
     });
 
-    connection.on('error', () => {
+    connection.on('error', (err) => {
+      console.error('Connection error:', err);
       if (this.conn === connection) this.conn = null;
     });
 
     if (connection.open) {
+      console.log('Connection already open');
       this.onOpenCallbacks.forEach((cb) => cb());
     }
   }

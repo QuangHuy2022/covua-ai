@@ -285,14 +285,27 @@ const GoGame: React.FC = () => {
     const targetId = remoteId.trim();
     if (!targetId) return;
 
+    // Validate ID format (6 alphanumeric characters)
+    if (!/^[A-Z0-9]{6}$/.test(targetId.toUpperCase())) {
+      alert("Mã phòng phải gồm 6 ký tự (chữ hoặc số)!");
+      return;
+    }
+
     if (targetId === connector.id) {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
+    console.log('Joining room:', targetId);
     setMyColor('b');
     myColorRef.current = 'b';
     startNewGame('online');
-    connector.connect(targetId);
+    connector.connect(targetId).then(() => {
+        console.log('Connect promise resolved');
+    }).catch((err: any) => {
+        console.error('Connect failed:', err);
+        alert('Kết nối thất bại: ' + (err?.message || err));
+        setShowSetup(true); // Re-show setup if failed
+    });
     setShowSetup(false);
   };
 

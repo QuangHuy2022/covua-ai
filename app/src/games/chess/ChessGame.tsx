@@ -319,10 +319,17 @@ const ChessGame: React.FC = () => {
       alert("Không thể tự kết nối với chính mình!");
       return;
     }
+    console.log('Joining room:', remoteId);
     setMyColor('b');
     myColorRef.current = 'b';
     startNewGame('online');
-    connector.connect(remoteId);
+    connector.connect(remoteId).then(() => {
+        console.log('Connect promise resolved');
+    }).catch((err) => {
+        console.error('Connect failed:', err);
+        alert('Kết nối thất bại: ' + err.message);
+        setShowSetup(true);
+    });
     setShowSetup(false);
   };
 
