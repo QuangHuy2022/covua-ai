@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Chess, type Square } from 'chess.js';
-import { RefreshCw, RotateCcw, Cpu, Users, Copy, Check, BookOpen, Info, Swords } from 'lucide-react';
+import { RefreshCw, RotateCcw, Cpu, Users, Copy, Check, BookOpen, Info, Swords, LogIn } from 'lucide-react';
 import { getBestMove, type Difficulty } from './ChessAI';
 import PeerConnector from '../../online/PeerConnector';
 
@@ -96,6 +96,7 @@ const ChessGame: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
   const [rematchState, setRematchState] = useState<'none' | 'sent' | 'received'>('none');
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Refs for stable access in callbacks
   const gameRef = React.useRef(game);
@@ -322,15 +323,19 @@ const ChessGame: React.FC = () => {
     console.log('Joining room:', remoteId);
     setMyColor('b');
     myColorRef.current = 'b';
+    setIsConnecting(true);
     startNewGame('online');
+    
     connector.connect(remoteId).then(() => {
         console.log('Connect promise resolved');
+        setShowSetup(false);
     }).catch((err) => {
         console.error('Connect failed:', err);
-        alert('Kết nối thất bại: ' + err.message);
+        alert('Kết nối thất bại: ' + (err?.message || err));
         setShowSetup(true);
+    }).finally(() => {
+        setIsConnecting(false);
     });
-    setShowSetup(false);
   };
 
   const handleResetOrRematch = () => {
@@ -500,10 +505,16 @@ const ChessGame: React.FC = () => {
                       className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
                     />
                     <button
-                      onClick={() => { joinOnlineRoom(); }}
-                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
+                      onClick={joinOnlineRoom}
+                      disabled={!remoteId || isConnecting}
+                      className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition flex justify-center items-center gap-2"
                     >
-                      Vào phòng
+                      {isConnecting ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <LogIn size={20} />
+                      )}
+                      {isConnecting ? 'Đang vào...' : 'Vào phòng'}
                     </button>
                   </div>
                 </div>

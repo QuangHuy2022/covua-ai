@@ -103,6 +103,8 @@ class PeerConnector {
     if (!targetId) return Promise.resolve();
 
     return new Promise<void>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+
       const run = async () => {
         try {
           if (!this.peer) {
@@ -142,25 +144,53 @@ class PeerConnector {
           const connection = this.peer.connect(targetId);
           this.attachConnection(connection);
 
+          // Cleanup function to clear timeout and listeners
+          const cleanup = () => {
+             if (timeoutId) clearTimeout(timeoutId);
+             if (this.peer) {
+                 this.peer.off('error', peerErrorListener);
+             }
+          };
+
+          const peerErrorListener = (err: any) => {
+              console.error('Peer error during connect:', err);
+              if (err?.type === 'peer-unavailable') {
+                  cleanup();
+                  reject(new Error('Không tìm thấy phòng này. Vui lòng kiểm tra lại ID.'));
+              }
+          };
+
+          this.peer.on('error', peerErrorListener);
+
           if (connection.open) {
             console.log('Connection opened immediately');
+            cleanup();
             resolve();
             return;
           }
 
           connection.on('open', () => {
             console.log('Connection opened via event');
+            cleanup();
             resolve();
           });
           connection.on('error', (err) => {
              console.error('Connection error during connect:', err);
+             cleanup();
              reject(err);
           });
         } catch (err: unknown) {
           console.error('Connect exception:', err);
+          if (timeoutId) clearTimeout(timeoutId);
           reject(err);
         }
       };
+
+      // Set a 15-second timeout
+      timeoutId = setTimeout(() => {
+          console.error('Connection timed out');
+          reject(new Error('Connection timed out. Please check the ID and try again.'));
+      }, 15000);
 
       void run();
     });

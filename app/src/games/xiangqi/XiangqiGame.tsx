@@ -49,6 +49,7 @@ const XiangqiGame: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
   const [rematchState, setRematchState] = useState<'none' | 'sent' | 'received'>('none');
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Refs for stable access in callbacks
   const boardRef = React.useRef(board);
@@ -279,15 +280,19 @@ const XiangqiGame: React.FC = () => {
     console.log('Joining room:', targetId);
     setMyColor('b');
     myColorRef.current = 'b';
+    setIsConnecting(true);
     startNewGame('online');
+    
     connector.connect(targetId).then(() => {
         console.log('Connect promise resolved');
+        setShowSetup(false);
     }).catch((err: any) => {
         console.error('Connect failed:', err);
         alert('Kết nối thất bại: ' + (err?.message || 'Unknown error'));
         setShowSetup(true);
+    }).finally(() => {
+        setIsConnecting(false);
     });
-    setShowSetup(false);
   };
 
   const resetGame = () => {
@@ -459,9 +464,11 @@ const XiangqiGame: React.FC = () => {
                     />
                     <button
                       onClick={() => { joinOnlineRoom(); }}
-                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
+                      disabled={!remoteId || isConnecting}
+                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      Vào phòng
+                      {isConnecting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                      {isConnecting ? 'Đang kết nối...' : 'Vào phòng'}
                     </button>
                   </div>
                 </div>

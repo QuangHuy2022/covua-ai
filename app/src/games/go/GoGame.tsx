@@ -36,6 +36,7 @@ const GoGame: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [rematchState, setRematchState] = useState<'idle' | 'sent' | 'received'>('idle');
   const [passes, setPasses] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Refs for stable access in callbacks
   const boardRef = React.useRef(board);
@@ -298,15 +299,19 @@ const GoGame: React.FC = () => {
     console.log('Joining room:', targetId);
     setMyColor('b');
     myColorRef.current = 'b';
+    setIsConnecting(true);
     startNewGame('online');
+    
     connector.connect(targetId).then(() => {
         console.log('Connect promise resolved');
+        setShowSetup(false);
     }).catch((err: any) => {
         console.error('Connect failed:', err);
         alert('Kết nối thất bại: ' + (err?.message || err));
         setShowSetup(true); // Re-show setup if failed
+    }).finally(() => {
+        setIsConnecting(false);
     });
-    setShowSetup(false);
   };
 
   const resetGame = () => {
@@ -466,10 +471,12 @@ const GoGame: React.FC = () => {
                       className="flex-1 p-3 bg-slate-700 rounded-lg border border-slate-600 text-white placeholder-slate-400"
                     />
                     <button
-                      onClick={() => { joinOnlineRoom(); }}
-                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold"
+                      onClick={joinOnlineRoom}
+                      disabled={!remoteId || isConnecting}
+                      className="px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      Vào phòng
+                      {isConnecting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                      {isConnecting ? 'Đang vào...' : 'Vào phòng'}
                     </button>
                   </div>
                 </div>
